@@ -4,7 +4,7 @@
 load 'tasks/setup.rb'
 
 ensure_in_path 'lib'
-require 'emdrb'
+require 'emdrb/version'
 
 task :default => 'test:run'
 

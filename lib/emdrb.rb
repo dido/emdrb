@@ -2,7 +2,7 @@
 # Author:: Rafael R. Sevilla (mailto:dido@imperium.ph)
 # Copyright:: Copyright (c) 2008 Rafael R. Sevilla
 # Homepage:: http://emdrb.rubyforge.org/
-# License:: GNU Lesser General Public License / Ruby License
+# License:: GNU General Public License / Ruby License
 #
 # $Id$
 #

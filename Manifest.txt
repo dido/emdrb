@@ -1,11 +1,12 @@
+COPYING
 History.txt
+LEGAL
 Manifest.txt
 README.txt
 Rakefile
-bin/emdrb
 lib/emdrb.rb
-spec/emdrb_spec.rb
-spec/spec_helper.rb
+lib/emdrb/emdrb.rb
+lib/emdrb/version.rb
 tasks/ann.rake
 tasks/bones.rake
 tasks/gem.rake

@@ -1,5 +1,5 @@
 # 
-# $Id: Rakefile 351 2008-07-21 05:18:42Z dido $
+# $Id$
 #
 load 'tasks/setup.rb'
 

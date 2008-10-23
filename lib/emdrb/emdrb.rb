@@ -402,6 +402,3 @@ module EMDRb
   module_function :thread
 
 end
-
-EMDRb.start_service("druby://:12345", [1,2,3])
-EMDRb.thread.join

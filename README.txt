@@ -1,6 +1,6 @@
 emdrb
     by Rafael R. Sevilla <dido@imperium.ph>
-    http://rubyforge.org/projects/emdrb
+    http://emdrb.rubyforge.org
 
 == DESCRIPTION:
 
@@ -10,41 +10,56 @@ available in the Ruby standard library.
 
 == FEATURES/PROBLEMS:
 
-* FIXME (list of features or problems)
+This is a simple but working DRb server implementation that uses
+EventMachine as its basis, rather than the default implementation that
+uses traditional Ruby sockets.  This should be somewhat more scalable
+than a server using the standard DRb library.
+
+Obviously, this is a quick and dirty release, just to get something
+out there, and of course it has a number of limitations.
+
+* We still don't have a DRb client.  We use the client implementation
+  of the standard DRb.
+* No SSL support.
+* No support for ACLs.
+* No unit tests so it probably still has a lot of bugs.
+* Many standard configuration options for DRb still unsupported
+
+These and many other problems are scheduled to be addressed in the
+next release.
 
 == SYNOPSIS:
 
-  FIXME (code sample of usage)
+Creating a server using EMDRb has been made as close as possible to
+making one with the standard library DRb:
+
+  require 'emdrb'
+
+  URI = "druby://localhost:8787"
+
+  class TimeServer
+    def get_current_time
+      return(Time.now)
+    end
+  end
+
+  $SAFE=1
+  EMDRb.start_service(URI, TimeServer.new)
+  EMDRb.thread.join
 
 == REQUIREMENTS:
 
-* FIXME (list of requirements)
+* Obviously, EMDRb requires EventMachine.
 
 == INSTALL:
 
-* FIXME (sudo gem install, anything else)
+* Standard gem installation: 'sudo gem install' ought to do the trick.
 
 == LICENSE:
 
-(The MIT License)
+Copyright (c) 2008 Rafael R. Sevilla.  You can redistribute it and/or
+modify it under the same terms as Ruby.  Please see the file COPYING for
+more details.
 
-Copyright (c) 2008 FIXME (different license?)
 
-Permission is hereby granted, free of charge, to any person obtaining
-a copy of this software and associated documentation files (the
-'Software'), to deal in the Software without restriction, including
-without limitation the rights to use, copy, modify, merge, publish,
-distribute, sublicense, and/or sell copies of the Software, and to
-permit persons to whom the Software is furnished to do so, subject to
-the following conditions:
 
-The above copyright notice and this permission notice shall be
-included in all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED 'AS IS', WITHOUT WARRANTY OF ANY KIND,
-EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
-MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
-IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
-CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
-TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
-SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.

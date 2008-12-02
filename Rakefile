@@ -1,4 +1,4 @@
-# 
+#  -*- Ruby -*-
 # $Id$
 #
 load 'tasks/setup.rb'
@@ -15,6 +15,7 @@ PROJ.url = 'http://emdrb.rubyforge.org'
 PROJ.rubyforge.name = 'emdrb'
 PROJ.version = EMDRb::Version::STRING
 PROJ.dependencies = ["eventmachine"]
+PROJ.rcov.opts += ["-Ilib"] # Why is this necessary?
 
 PROJ.spec.opts << '--color'
 

@@ -248,11 +248,11 @@ module EMDRb
       when :argv
         @argv << @request[:argv]
         @argc -= 1
-        if @argc <= 1
+        if @argc < 1
           @state = :block
         end
       when :block
-        @request[:argv] = @argv
+        @request[:argv] = @argv        
         @state = :ref
         send_reply(*perform)
         @request = {}
@@ -348,8 +348,10 @@ module EMDRb
       option = $4
       [host, port, option]
     else
-      raise(DRb::DRbBadScheme, uri) unless uri =~ /^druby:/
-      raise(DRb::DRbBadURI, 'can\'t parse uri:' + uri)
+      unless uri =~ /^druby:/
+        raise DRb::DRbBadScheme.new(uri)
+      end
+      raise DRb::DRbBadURI.new('can\'t parse uri:' + uri)
     end
   end
   module_function :parse_uri

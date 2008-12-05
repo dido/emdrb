@@ -46,8 +46,15 @@ class TestServer
 end
 
 class EMDRbTest < Test::Unit::TestCase
-  def test_drb
+  def setup
     EMDRb.start_service("druby://:12345", TestServer.new)
+  end
+
+  def teardown
+    EMDRb.thread.kill
+  end
+
+  def test_server
     o = DRbObject.new_with_uri("druby://localhost:12345")
     DRb.start_service
     assert_equal(1, o.identity(1))
@@ -59,6 +66,30 @@ class EMDRbTest < Test::Unit::TestCase
     val = 1
     o.blockyield(1,2,3,4,5,6,7) { |x| val *= x }
     assert_equal(5040, val)
+  end
+
+  def test_client
+    o = EMDRb::DRbObject.new(nil, "druby://localhost:12345")
+    q = Queue.new
+    EventMachine::next_tick do
+      o.send_async(:identity, 1).callback do |data|
+        assert(data[0])
+        assert_equal(1, data[1])
+        q << data
+      end
+    end
+    q.shift
+
+    EventMachine::next_tick do
+      df = o.send_async(:blockyield, 1,2,3,4,5,6,7) { |x| val *= x }
+      df.callback do |data|
+        assert(data[0])
+        assert_equal(5040, data[1])
+        q << data
+      end
+    end
+    q.shift
+
   end
 
 end

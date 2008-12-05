@@ -28,9 +28,81 @@ module EMDRb
   DEFAULT_SAFE_LEVEL = 0
 
   ##
+  # Common protocol elements for distributed Ruby, used by both the
+  # client and server.
+  #
+  module DRbProtocolCommon
+    ##
+    # This method will dump an object +obj+ using Ruby's marshalling
+    # capabilities.  It will make a proxy to the object instead if
+    # the object is undumpable.  The dumps are basically data produced
+    # by Marshal::dump prefixed by a 32-bit length field in network
+    # byte order.
+    #
+    def dump(obj, error=false)
+      if obj.kind_of? DRb::DRbUndumped
+        obj = make_proxy(obj, error)
+      end
+      begin
+        str = Marshal::dump(obj)
+      rescue
+        str = Marshal::dump(make_proxy(obj, error))
+      end
+      return([str.size].pack("N") + str)
+    end
+
+    ##
+    # Create a proxy for +obj+ that is declared to be undumpable.
+    #
+    def make_proxy(obj, error=false)
+      return(error ? DRb::DRbRemoteError.new(obj) : EMDRb::DRbObject.new(obj))
+    end
+
+    ##
+    # Receive data from the caller.  This basically receives packets
+    # containing objects marshalled using Ruby's Marshal::dump prefixed
+    # by a length.  These objects are unmarshalled and processed by the
+    # internal object request state machine (DRbServerProtocol#receive_obj
+    # below).  If an error of any kind occurs herein, the exception is
+    # propagated to the caller.
+    def receive_data(data)
+      begin
+        @msgbuffer << data
+        while @msgbuffer.length > 4
+          length = @msgbuffer.unpack("N")[0]
+          if length > @load_limit
+            raise DRb::DRbConnError, "too large packet #{length}"
+          end
+          
+          if @msgbuffer.length < length - 4
+            # not enough data for this length, return to event loop
+            # to wait for more.
+            break
+          end
+          length, message, @msgbuffer = @msgbuffer.unpack("Na#{length}a*")
+          receive_obj(obj_load(message))
+        end
+      rescue Exception => e
+        send_reply(false, e)
+      end
+    end
+
+    ##
+    # Load a serialized object.
+    def obj_load(message)
+      begin
+        return(Marshal::load(message))
+      rescue NameError, ArgumentError
+        return(DRb::DRbUnknown.new($!, message))
+      end
+    end
+  end
+
+  ##
   # EventMachine server module for DRb.
   #
   module DRbServerProtocol
+    include DRbProtocolCommon
     ##
     # The front object for this server connection.
     attr_accessor :front
@@ -80,61 +152,7 @@ module EMDRb
       @server = @argv = @argc = nil
     end
 
-    ##
-    # Receive data from the caller.  This basically receives packets
-    # containing objects marshalled using Ruby's Marshal::dump prefixed
-    # by a length.  These objects are unmarshalled and processed by the
-    # internal object request state machine.  If an error of any kind
-    # occurs herein, the exception is propagated to the caller.
-    def receive_data(data)
-      begin
-        @msgbuffer << data
-        while @msgbuffer.length > 4
-          length = @msgbuffer.unpack("N")[0]
-          if length > @load_limit
-            raise DRb::DRbConnError, "too large packet #{length}"
-          end
-          
-          if @msgbuffer.length < length - 4
-            # not enough data for this length, return to event loop
-            # to wait for more.
-            break
-          end
-          length, message, @msgbuffer = @msgbuffer.unpack("Na#{length}a*")
-          add_obj(obj_load(message))
-        end
-      rescue Exception => e
-        send_reply(false, e)
-      end
-    end
-
     private
-
-    ##
-    # This method will dump an object +obj+ using Ruby's marshalling
-    # capabilities.  It will make a proxy to the object instead if
-    # the object is undumpable.  The dumps are basically data produced
-    # by Marshal::dump prefixed by a 32-bit length field in network
-    # byte order.
-    #
-    def dump(obj, error=false)
-      if obj.kind_of? DRb::DRbUndumped
-        obj = make_proxy(obj, error)
-      end
-      begin
-        str = Marshal::dump(obj)
-      rescue
-        str = Marshal::dump(make_proxy(obj, error))
-      end
-      return([str.size].pack("N") + str)
-    end
-
-    ##
-    # Create a proxy for +obj+ that is declared to be undumpable.
-    #
-    def make_proxy(obj, error=false)
-      return(error ? Drb::DRbRemoteError.new(obj) : DRb::DRbObject.new(obj))
-    end
 
     ##
     # Send a reply to the caller.  The return value for distributed Ruby
@@ -142,7 +160,7 @@ module EMDRb
     # by a dump of the data.
     #
     def send_reply(succ, result)
-      send_data(dump(succ) + dump(result, !succ))        
+      send_data(dump(succ) + dump(result, !succ))
     end
 
     ##
@@ -229,7 +247,22 @@ module EMDRb
       return(@idconv.to_obj(ref))
     end
 
-    def add_obj(obj)
+    ##
+    # This is the main state machine that processes distributed Ruby calls.
+    # A DRb client basically sends several pieces of data in sequence, each
+    # of which corresponds to a state of this machine.
+    #
+    # 1. :ref - this gives a reference to a DRb server running on the
+    #    caller, mainly used to provide a mechanism for accessing undumpable
+    #    objects on the caller.
+    # 2. :msg - a symbol giving the method to be called on this server.
+    # 3. :argc - an integer count of the number of arguments on the caller.
+    # 4. :argv - repeats an :argc number of times, the actual arguments
+    #    sent by the caller.
+    # 5. :block - the block passed by the caller (generally a DRbObject
+    #    wrapping a Proc object).
+    #
+    def receive_obj(obj)
       @request[@state] = obj
       case @state
       when :ref
@@ -252,7 +285,7 @@ module EMDRb
           @state = :block
         end
       when :block
-        @request[:argv] = @argv        
+        @request[:argv] = @argv
         @state = :ref
         send_reply(*perform)
         @request = {}
@@ -262,18 +295,13 @@ module EMDRb
       end
     end
 
-    ##
-    # Load a serialized object.
-    def obj_load(message)
-      begin
-        return(Marshal::load(message))
-      rescue NameError, ArgumentError
-        return(DRb::DRbUnknown.new($!, message))
-      end
-    end
-
   end
 
+  ##
+  # Class representing a drb server instance.  This subclasses DRb::DRbServer
+  # for brevity.  DRbServer instances are normally created indirectly using
+  # either EMDRb.start service (which emulates DRb.start_service) or via
+  # EMDRb.start_drbserver (designed to be called from within an event loop).
   class DRbServer < DRb::DRbServer
     def initialize(uri=nil, front=nil, config_or_acl=nil)
       if Hash === config_or_acl
@@ -290,8 +318,6 @@ module EMDRb
       @front = front
       @idconv = @config[:idconv]
       @safe_level = @config[:safe_level]
-      @thread = run
-      EMDRb.regist_server(self)
     end
 
     private
@@ -319,23 +345,25 @@ module EMDRb
       end
     end
 
-    def run
-      Thread.start do
-        host, port, opt = EMDRb::parse_uri(@uri)
-        if host.size == 0
-          host = self.class.host_inaddr_any
-        end
-        EventMachine::run do
-          EventMachine::start_server(host, port, DRbServerProtocol) do |conn|
-            Thread.current['DRb'] = { 'client' => conn, 'server' => self }
-            conn.front = @front
-            conn.load_limit = @config[:load_limit]
-            conn.argc_limit = @config[:argc_limit]
-            conn.idconv = @config[:idconv]
-            conn.server = self
-            conn.safe_level = self.safe_level
-          end
-        end
+    public
+
+    ##
+    # Start a DRb server from within an event loop.
+    #
+    def start_drb_server
+      @thread = Thread.current
+      host, port, opt = EMDRb::parse_uri(@uri)
+      if host.size == 0
+        host = self.class.host_inaddr_any
+      end
+      EventMachine::start_server(host, port, DRbServerProtocol) do |conn|
+        Thread.current['DRb'] = { 'client' => conn, 'server' => self }
+        conn.front = @front
+        conn.load_limit = @config[:load_limit]
+        conn.argc_limit = @config[:argc_limit]
+        conn.idconv = @config[:idconv]
+        conn.server = self
+        conn.safe_level = self.safe_level
       end
     end
 
@@ -357,9 +385,38 @@ module EMDRb
   module_function :parse_uri
 
   @primary_server = nil
+  @eventloop = nil
 
+  ##
+  # This is the 'bare bones' start_service which can be used to
+  # start a DRb service from within an existing event loop.
+  def start_drbserver(uri=nil, front=nil, config=nil)
+    serv = DRbServer.new(uri, front, config)
+    serv.start_drb_server
+    return(serv)
+  end
+  module_function :start_drbserver
+
+  ##
+  # This start_service emulates DRb#start_service.
+  #
   def start_service(uri=nil, front=nil, config=nil)
-    @primary_server = DRbServer.new(uri, front, config)
+    unless EventMachine::reactor_running?
+      @eventloop = Thread.new do
+        EventMachine::run do
+          # Start an empty event loop.  The DRb server(s) will be started
+          # by EM#next_tick calls.
+        end
+      end
+    end
+    queue = Queue.new
+    EventMachine::next_tick do
+      queue << self.start_drbserver(uri, front, config)
+    end
+    serv = queue.shift
+    @primary_server = serv
+    EMDRb.regist_server(serv)
+    return(serv)
   end
   module_function :start_service
 
@@ -402,5 +459,94 @@ module EMDRb
     @primary_server ? @primary_server.thread : nil
   end
   module_function :thread
+
+
+  ##
+  # Client protocol module 
+  module DRbClientProtocol
+    include DRbProtocolCommon
+
+    attr_accessor :ref
+    attr_accessor :msg_id
+    attr_accessor :args
+    attr_accessor :block
+    attr_accessor :df
+
+    def post_init
+      @msgbuffer = ""
+      @idconv = DRb::DRbIdConv.new
+      @load_limit = DEFAULT_LOAD_LIMIT
+    end
+
+    def connection_completed
+      @connected = true
+      send_request(@ref, @msg_id, @args, @block)
+      @state = :succ
+      @succ = nil
+      @result = nil
+    end
+
+    def send_request(ref, msgid, arg, block)
+      ary = []
+      ary.push(dump(ref.__drbref))
+      ary.push(dump(msg_id.id2name))
+      ary.push(dump(arg.length))
+      arg.each do |e|
+	ary.push(dump(e))
+      end
+      ary.push(dump(block))
+      send_data(ary.join(''))
+    end
+
+    def receive_obj(obj)
+      if @state == :succ
+        @succ = obj
+        @state = :result
+      else
+        @result = obj
+        @state = :succ
+        @df.set_deferred_status(:succeeded, [@succ, @result])
+        # close the connection after the call succeeds.
+        close_connection
+      end
+    end
+  end
+
+  ##
+  # Object wrapping a reference to a remote drb object.
+  #
+  # Method calls on this object are relayed to the remote object
+  # that this object is a stub for.
+  class DRbObject < DRb::DRbObject
+    def initialize(obj, uri=nil)
+      @uri = nil
+      @ref = nil
+      if obj.nil?
+	return if uri.nil?
+        @uri = uri
+        ref = nil
+        @host, @port, @opt = EMDRb::parse_uri(@uri)
+      else
+        @ref = obj
+      end
+    end
+
+    ##
+    # Perform an asynchronous call to the remote object.  This can only
+    # be used from within an event loop.  It returns a deferrable to which
+    # callbacks can be attached.
+    def send_async(msg_id, *a, &b)
+      df = EventMachine::DefaultDeferrable.new
+      EventMachine.connect(@host, @port, DRbClientProtocol) do |c|
+        c.ref = self
+        c.msg_id = msg_id
+        c.args = a
+        c.block = b
+        c.df = df
+      end
+      return(df)
+    end
+
+  end
 
 end

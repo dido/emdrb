@@ -55,7 +55,7 @@ module EMDRb
     # Create a proxy for +obj+ that is declared to be undumpable.
     #
     def make_proxy(obj, error=false)
-      return(error ? DRb::DRbRemoteError.new(obj) : EMDRb::DRbObject.new(obj))
+      return(error ? DRb::DRbRemoteError.new(obj) : DRb::DRbObject.new(obj))
     end
 
     ##
@@ -66,24 +66,20 @@ module EMDRb
     # below).  If an error of any kind occurs herein, the exception is
     # propagated to the caller.
     def receive_data(data)
-      begin
-        @msgbuffer << data
-        while @msgbuffer.length > 4
-          length = @msgbuffer.unpack("N")[0]
-          if length > @load_limit
-            raise DRb::DRbConnError, "too large packet #{length}"
-          end
-          
-          if @msgbuffer.length < length - 4
-            # not enough data for this length, return to event loop
-            # to wait for more.
-            break
-          end
-          length, message, @msgbuffer = @msgbuffer.unpack("Na#{length}a*")
-          receive_obj(obj_load(message))
+      @msgbuffer << data
+      while @msgbuffer.length > 4
+        length = @msgbuffer.unpack("N")[0]
+        if length > @load_limit
+          raise DRb::DRbConnError, "too large packet #{length}"
         end
-      rescue Exception => e
-        send_reply(false, e)
+
+        if @msgbuffer.length < length - 4
+          # not enough data for this length, return to event loop
+          # to wait for more.
+          break
+        end
+        length, message, @msgbuffer = @msgbuffer.unpack("Na#{length}a*")
+        receive_obj(obj_load(message))
       end
     end
 

@@ -80,16 +80,16 @@ class EMDRbTest < Test::Unit::TestCase
     end
     q.shift
 
-#    EventMachine::next_tick do
-#      val = 1
-#      df = o.send_async(:blockyield, 1,2,3,4,5,6,7) { |x| val *= x; val }
-#      df.callback do |data|
-#        assert(data[0])
-#        assert_equal(5040, data[1])
-#        q << data
-#      end
-#    end
-#    q.shift
+    EventMachine::next_tick do
+      val = 1
+      df = o.send_async(:blockyield, 1,2,3,4,5,6,7) { |x| val *= x; val }
+      df.callback do |data|
+        assert(data[0])
+        assert_equal(5040, val)
+        q << data
+      end
+    end
+    q.shift
 
   end
 

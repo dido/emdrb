@@ -26,7 +26,7 @@ module EMDRb
 
     MAJOR = 0
     MINOR = 1
-    TINY = 1
+    TINY = 2
 
     # The version of EMDRb in use.
     STRING = [ MAJOR, MINOR, TINY ].join(".")

@@ -1,6 +1,6 @@
 #
 # Author:: Rafael R. Sevilla (mailto:dido@imperium.ph)
-# Copyright:: Copyright (c) 2008 Rafael R. Sevilla
+# Copyright:: Copyright © 2008, 2009 Rafael R. Sevilla
 # Homepage:: http://emdrb.rubyforge.org/
 # License:: GNU General Public License / Ruby License
 #
@@ -8,7 +8,7 @@
 #
 #----------------------------------------------------------------------------
 #
-# Copyright (C) 2008 Rafael Sevilla
+# Copyright © 2008, 2009 Rafael Sevilla
 # This file is part of EMDRb
 #
 # This program is free software; you can redistribute it and/or modify
@@ -20,9 +20,10 @@
 #----------------------------------------------------------------------------
 #
 require 'eventmachine'
+require 'thread'
 require 'drb'
 
-module EMDRb
+module DRb
   DEFAULT_ARGC_LIMIT = 256
   DEFAULT_LOAD_LIMIT = 256 * 102400
   DEFAULT_SAFE_LEVEL = 0
@@ -40,7 +41,7 @@ module EMDRb
     # byte order.
     #
     def dump(obj, error=false)
-      if obj.kind_of? DRb::DRbUndumped
+      if obj.kind_of? DRbUndumped
         obj = make_proxy(obj, error)
       end
       begin
@@ -55,22 +56,21 @@ module EMDRb
     # Create a proxy for +obj+ that is declared to be undumpable.
     #
     def make_proxy(obj, error=false)
-      return(error ? DRb::DRbRemoteError.new(obj) : DRb::DRbObject.new(obj))
+      return(error ? DRbRemoteError.new(obj) : DRbObject.new(obj))
     end
 
     ##
     # Receive data from the caller.  This basically receives packets
     # containing objects marshalled using Ruby's Marshal::dump prefixed
     # by a length.  These objects are unmarshalled and processed by the
-    # internal object request state machine (DRbServerProtocol#receive_obj
-    # below).  If an error of any kind occurs herein, the exception is
-    # propagated to the caller.
-    def receive_data(data)
+    # internal object request state machine which should be represented by
+    # a receive_obj method from within the mixin.
+    def receive_data_raw(data)
       @msgbuffer << data
       while @msgbuffer.length > 4
         length = @msgbuffer.unpack("N")[0]
         if length > @load_limit
-          raise DRb::DRbConnError, "too large packet #{length}"
+          raise DRbConnError, "too large packet #{length}"
         end
 
         if @msgbuffer.length < length - 4
@@ -89,7 +89,7 @@ module EMDRb
       begin
         return(Marshal::load(message))
       rescue NameError, ArgumentError
-        return(DRb::DRbUnknown.new($!, message))
+        return(DRbUnknown.new($!, message))
       end
     end
   end
@@ -291,6 +291,18 @@ module EMDRb
       end
     end
 
+    ##
+    # This version of receive_data will propagate any exceptions thrown
+    # by receive_data_raw back to the caller.  This includes load limit
+    # errors and other miscellanea.
+    def receive_data(data)
+      begin
+        return(receive_data_raw(data))
+      rescue Exception => e
+        return(send_reply(false, e))
+      end
+    end
+
   end
 
   ##
@@ -298,7 +310,7 @@ module EMDRb
   # for brevity.  DRbServer instances are normally created indirectly using
   # either EMDRb.start service (which emulates DRb.start_service) or via
   # EMDRb.start_drbserver (designed to be called from within an event loop).
-  class DRbServer < DRb::DRbServer
+  class DRbServer
     def initialize(uri=nil, front=nil, config_or_acl=nil)
       if Hash === config_or_acl
 	config = config_or_acl.dup
@@ -314,6 +326,9 @@ module EMDRb
       @front = front
       @idconv = @config[:idconv]
       @safe_level = @config[:safe_level]
+      EventMachine::next_tick do
+        @thread = Thread.current
+      end
     end
 
     private
@@ -348,7 +363,7 @@ module EMDRb
     #
     def start_drb_server
       @thread = Thread.current
-      host, port, opt = EMDRb::parse_uri(@uri)
+      host, port, opt = DRb::parse_uri_drb(@uri)
       if host.size == 0
         host = self.class.host_inaddr_any
       end
@@ -365,7 +380,7 @@ module EMDRb
 
   end
 
-  def parse_uri(uri)
+  def parse_uri_drb(uri)
     if uri =~ /^druby:\/\/(.*?):(\d+)(\?(.*))?$/
       host = $1
       port = $2.to_i
@@ -378,9 +393,8 @@ module EMDRb
       raise DRb::DRbBadURI.new('can\'t parse uri:' + uri)
     end
   end
-  module_function :parse_uri
+  module_function :parse_uri_drb
 
-  @primary_server = nil
   @eventloop = nil
 
   ##
@@ -411,51 +425,10 @@ module EMDRb
     end
     serv = queue.shift
     @primary_server = serv
-    EMDRb.regist_server(serv)
+    DRb.regist_server(serv)
     return(serv)
   end
   module_function :start_service
-
-  attr_accessor :primary_server
-  module_function :primary_server=, :primary_server
-
-  @server = {}
-  def regist_server(server)
-    @server[server.uri] = server
-    Thread.exclusive do
-      @primary_server = server unless @primary_server
-    end
-  end
-  module_function :regist_server
-
-  ##
-  # Get the 'current' server.
-  #
-  # In the context of execution taking place within the main
-  # thread of a dRuby server (typically, as a result of a remote
-  # call on the server or one of its objects), the current
-  # server is that server.  Otherwise, the current server is
-  # the primary server.
-  #
-  # If the above rule fails to find a server, a DRbServerNotFound
-  # error is raised.
-  def current_server
-    drb = Thread.current['DRb'] 
-    server = (drb && drb['server']) ? drb['server'] : @primary_server 
-    raise DRb::DRbServerNotFound unless server
-    return server
-  end
-  module_function :current_server
-
-  ##
-  # Get the thread of the primary server.
-  #
-  # This returns nil if there is no primary server.  See #primary_server.
-  def thread
-    @primary_server ? @primary_server.thread : nil
-  end
-  module_function :thread
-
 
   ##
   # Client protocol module 
@@ -470,7 +443,7 @@ module EMDRb
 
     def post_init
       @msgbuffer = ""
-      @idconv = DRb::DRbIdConv.new
+      @idconv = DRbIdConv.new
       @load_limit = DEFAULT_LOAD_LIMIT
     end
 
@@ -506,6 +479,10 @@ module EMDRb
         close_connection
       end
     end
+
+    def receive_data(data)
+      return(receive_data_raw(data))
+    end
   end
 
   ##
@@ -513,7 +490,7 @@ module EMDRb
   #
   # Method calls on this object are relayed to the remote object
   # that this object is a stub for.
-  class DRbObject < DRb::DRbObject
+  class DRbObject
     def initialize(obj, uri=nil)
       @uri = nil
       @ref = nil
@@ -521,15 +498,16 @@ module EMDRb
 	return if uri.nil?
         @uri = uri
         ref = nil
-        @host, @port, @opt = EMDRb::parse_uri(@uri)
+        @host, @port, @opt = DRb::parse_uri_drb(@uri)
       else
-        @ref = obj
+	@uri = uri ? uri : (DRb.uri rescue nil)
+        @ref = obj ? DRb.to_id(obj) : nil
       end
     end
 
     ##
     # Perform an asynchronous call to the remote object.  This can only
-    # be used from within an event loop.  It returns a deferrable to which
+    # be used from within the event loop.  It returns a deferrable to which
     # callbacks can be attached.
     def send_async(msg_id, *a, &b)
       df = EventMachine::DefaultDeferrable.new
@@ -541,6 +519,38 @@ module EMDRb
         c.df = df
       end
       return(df)
+    end
+
+    ##
+    # Route method calls to the referenced object.  This synchronizes
+    # an asynchronous call by using a Queue to synchronize the DRb
+    # event thread with the calling thread, so use of this mechanism,
+    # to make method calls within an event loop will thus result in a
+    # threading deadlock!  Use the send_async method if you want to
+    # use EMDRb from within an event loop.
+    def method_missing(msg_id, *a, &b)
+      if DRb.here?(@uri)
+	obj = DRb.to_obj(@ref)
+	DRb.current_server.check_insecure_method(obj, msg_id)
+	return obj.__send__(msg_id, *a, &b) 
+      end
+
+      q = Queue.new
+      EventMachine::next_tick do
+        df = self.send_async(msg_id, *a, &b)
+        df.callback { |data| q << data }
+      end
+      succ, result = q.shift
+
+      if succ
+        return result
+      elsif DRbUnknown === result
+        raise result
+      else
+        bt = self.class.prepare_backtrace(@uri, result)
+	result.set_backtrace(bt + caller)
+        raise result
+      end
     end
 
   end

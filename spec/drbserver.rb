@@ -19,10 +19,36 @@
 # See the file COPYING for complete licensing information.
 #----------------------------------------------------------------------------
 #
-# This is a 'real' DRb server using the standard DRb implementation that
-# should be run by the specs.
+# This is the DRb server that should be run by the specs, and can execute
+# using either the standard DRb or EMDRb depending on what is being tested.
 #
-require 'drb'
+require 'daemons'
+
+if ARGV[0] == "emdrb"
+  $LOAD_PATH << File.join(File.dirname(__FILE__), '../lib/')
+  require 'emdrb'
+elsif ARGV[0] == "drb"
+  require 'drb'
+else
+  raise "specify emdrb or drb on the command line"
+end
+
+pidfile = File.expand_path(File.join(File.dirname(__FILE__), "drbserver.pid"))
+if File.exist?(pidfile)
+  exit(0)
+end
+Daemonize.daemonize
+pid = Process.pid
+File.open(pidfile, "w") { |fp| fp.write(pid.to_s) }
+
+handler = lambda do
+  File.delete(pidfile)
+  exit(0)
+end
+
+trap("SIGTERM", handler)
+trap("SIGINT", handler)
+
 
 class TestServer
   def identity(x)
@@ -43,6 +69,8 @@ class TestServer
     end
   end
 end
+
+
 
 DRb.start_service("druby://:12345", TestServer.new)
 DRb.thread.join

@@ -7,6 +7,11 @@ Rakefile
 lib/emdrb.rb
 lib/emdrb/emdrb.rb
 lib/emdrb/version.rb
+spec/client_spec.rb
+spec/drbserver.rb
+spec/server_spec.rb
+spec/spec_common.rb
+spec/spec_helper.rb
 tasks/ann.rake
 tasks/bones.rake
 tasks/gem.rake
@@ -20,4 +25,3 @@ tasks/setup.rb
 tasks/spec.rake
 tasks/svn.rake
 tasks/test.rake
-test/test_emdrb.rb

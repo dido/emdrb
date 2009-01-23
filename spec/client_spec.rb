@@ -20,35 +20,22 @@
 #----------------------------------------------------------------------------
 #
 require File.join(File.dirname(__FILE__), %w[spec_helper])
-require 'drb'
-require 'thread'
+require File.join(File.dirname(__FILE__), %w[spec_common])
 
 Thread.abort_on_exception = true
 
-class TestServer
-  def identity(x)
-    return(x)
-  end
-
-  def addtwo(x, y)
-    return(x+y)
-  end
-
-  def sum(*vals)
-    return(vals.inject(0) { |x,y| x + y })
-  end
-
-  def blockyield(*vals)
-    vals.each do |x|
-      yield x
-    end
-  end
-end
-
 describe EMDRb, "Client" do
+  it_should_behave_like "DRb basics"
+
   before(:all) do
-    DRb.start_service("druby://:12345", TestServer.new)
+    system(File.join(File.dirname(__FILE__), "drbserver.rb drb"))
+    DRb.start_service
     @obj = DRb::DRbObject.new(nil, "druby://localhost:12345")
+  end
+
+  after(:all) do
+    pid = File.open(File.join(File.dirname(__FILE__), "drbserver.pid")) { |fp| fp.read.to_i }
+    Process.kill("SIGTERM", pid)
   end
 
   it "should be able to perform asynchronous method calls" do
@@ -69,17 +56,6 @@ describe EMDRb, "Client" do
         val.should == 5040
       end
     end
-  end
-
-  it "should be able to perform simple synchronous method calls" do
-    @obj.identity(1).should == 1
-    @obj.addtwo(1, 2).should == 3
-  end
-
-  it "should be able to perform synchronous method calls with a block" do
-    val = 1
-    @obj.blockyield(1,2,3,4,5,6,7) { |x| val *= x }
-    val.should == 5040
   end
 
 end

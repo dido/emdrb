@@ -161,81 +161,111 @@ module DRb
 
     ##
     # This method will perform a method action if a block is not specified.
-    #
+    # For symmetry with perform_with_block, this method returns a deferrable
+    # instead of the actual value or exception as the case may be.  It will
+    # also further execute the method call in its own independent thread
+    # and safe level invocations are also taken care of herein.
     def perform_without_block
-      if Proc == @request[:ro] && @request[:msg] == :__drb_yield
-        ary = (@request[:argv].size == 1) ? @request[:argv] : [@request[:argv]]
-        return(ary.collect(&@front)[0])
+      df = EventMachine::DefaultDeferrable.new
+      info = Thread.current['DRb']
+      Thread.new do
+        Thread.current['DRb'] = info
+        if $SAFE < @safe_level
+          $SAFE = @safe_level
+        end
+        req = @request
+        begin
+          if Proc == req[:ro] && req[:msg] == :__drb_yield
+            ary = (req[:argv].size == 1) ? req[:argv] :
+              [req[:argv]]
+            EventMachine::next_tick do
+              df.set_deferred_status(:succeeded, ary.collect(&@front)[0])
+            end
+          else
+            r = req[:ro].__send__(req[:msg], *req[:argv])
+            EventMachine::next_tick do
+              df.set_deferred_status(:succeeded, r)
+            end
+          end
+        rescue
+          p $!
+          EventMachine::next_tick do
+            df.set_deferred_status(:failed, $!)
+          end
+        end
       end
-      return(@request[:ro].__send__(@request[:msg], *@request[:argv]))
+      return(df)
     end
 
     ##
     # block_yield method lifted almost verbatim from InvokeMethod18Mixin
     # from the standard distributed Ruby.  Obviously, since EventMachine
     # doesn't work with Ruby 1.6.x, we don't care about the 1.6 version...
-    #
-    def block_yield(x)
+    # Since this performs a synchronous DRb call, we need to execute this
+    # within a thread of its own.
+    def block_yield(req, x)
       if x.size == 1 && x[0].class == Array
-        x[0] = DRb::DRbArray.new(x[0])
+        x[0] = DRbArray.new(x[0])
       end
-      block_value = @request[:block].call(*x)
+      block_value = req[:block].call(*x)
+      return(block_value)
     end
 
     ##
-    # Perform with a method action with a specified block.
-    #
+    # Perform with a method action with a specified block.  We have to
+    # do the action within a thread of its own in order to avoid deadlock
+    # due to the call in block_yield above, which uses synchronous calls.
+    # I suppose there must be a way to do it without using threads (possibly
+    # by using call/cc perhaps?), but I suppose this should be okay.
     def perform_with_block
+      df = EventMachine::DefaultDeferrable.new
+      info = Thread.current['DRb']
       Thread.new do
-        @request[:ro].__send__(@request[:msg], *@request[:argv]) do |*x|
-          jump_error = nil
-          begin
-            block_value = block_yield(x)
-          rescue LocalJumpError
-            jump_error = $!
-          end
-          if jump_error
-            case jump_error.reason
-            when :retry
-              retry
-            when :break
-              break(jump_error.exit_value)
-            else
-              raise jump_error
-            end
-          end
-          block_value
+        Thread.current['DRb'] = info
+        if $SAFE < @safe_level
+          $SAFE = @safe_level
         end
-      end.value
+        req = @request
+        begin
+          r = req[:ro].__send__(req[:msg], *req[:argv]) { |*x|
+            jump_error = nil
+            block_value = nil
+            begin
+              block_value = block_yield(req, x)
+            rescue LocalJumpError
+              jump_error = $!
+            end
+            if jump_error
+              case jump_error.reason
+              when :retry
+                retry
+              when :break
+                break(jump_error.exit_value)
+              else
+                raise jump_error
+              end
+            end
+            block_value
+          }
+          EventMachine::next_tick { df.set_deferred_status(:succeeded, r) }
+        rescue Exception => e
+          EventMachine::next_tick do
+            df.set_deferred_status(:failed, e)
+          end
+        end
+      end
+      return(df)
     end
 
     ##
-    # Perform a method action.  This handles the safe level invocations.
+    # Perform a method action.  This returns a deferrable that gets
+    # posted to succeeded or failed depending on whether the method
+    # call did not raise or raised an exception while it was being
+    # executed.
     #
     def perform
-      result = nil
-      succ = false
-      begin
-        @server.check_insecure_method(@request[:ro], @request[:msg])
-        if $SAFE < @safe_level
-          info = Thread.current['DRb']
-          result = Thread.new {
-            Thread.current['DRb'] = info
-            $SAFE = @safe_level
-            (@request[:block]) ? perform_with_block : perform_without_block
-          }.value
-        else
-          result = (@request[:block]) ? perform_with_block :
-            perform_without_block
-          succ = true
-          if @request[:msg] == :to_ary && result.class == Array
-            result = DRb::DRbArray.new(result)
-          end
-        end
-      rescue StandardError, ScriptError, Interrupt
-        result = $!
-      end
-      return([succ, result])
+      @server.check_insecure_method(@request[:ro], @request[:msg])
+      return((@request[:block]) ? perform_with_block : perform_without_block)
     end
 
     def to_obj(ref)
@@ -285,7 +315,16 @@ module DRb
       when :block
         @request[:argv] = @argv
         @state = :ref
-        send_reply(*perform)
+        df = perform
+        df.callback do |result|
+          if @request[:msg] == :to_ary && result.class == Array
+            result = DRb::DRbArray.new(result)
+          end
+          send_reply(true, result)
+        end
+        df.errback do |error|
+          send_reply(false, error)
+        end
         @request = {}
         @argc = @argv = nil
       else
@@ -520,6 +559,9 @@ module DRb
     # callbacks can be attached.
     def send_async(msg_id, *a, &b)
       df = EventMachine::DefaultDeferrable.new
+      if @host.nil? || @port.nil?
+        @host, @port, @opt = DRb::parse_uri_drb(@uri)
+      end
       EventMachine.connect(@host, @port, DRbClientProtocol) do |c|
         c.ref = self
         c.msg_id = msg_id
@@ -550,7 +592,6 @@ module DRb
         df.callback { |data| q << data }
       end
       succ, result = q.shift
-
       if succ
         return result
       elsif DRbUnknown === result

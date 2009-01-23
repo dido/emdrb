@@ -22,7 +22,7 @@ out there, and of course it has a number of limitations:
 * No SSL support.
 * No support for ACLs.
 * No support for DRb over Unix domain sockets.
-* Only the basic unit tests
+* RSpec tests are very basic, and need a lot more comprehensive work.
 * Many standard configuration options for DRb still unsupported
 
 These and many other problems are scheduled to be addressed in the

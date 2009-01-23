@@ -168,12 +168,12 @@ module DRb
     def perform_without_block
       df = EventMachine::DefaultDeferrable.new
       info = Thread.current['DRb']
+      req = @request
       Thread.new do
         Thread.current['DRb'] = info
         if $SAFE < @safe_level
           $SAFE = @safe_level
         end
-        req = @request
         begin
           if Proc == req[:ro] && req[:msg] == :__drb_yield
             ary = (req[:argv].size == 1) ? req[:argv] :
@@ -220,12 +220,12 @@ module DRb
     def perform_with_block
       df = EventMachine::DefaultDeferrable.new
       info = Thread.current['DRb']
+      req = @request
       Thread.new do
         Thread.current['DRb'] = info
         if $SAFE < @safe_level
           $SAFE = @safe_level
         end
-        req = @request
         begin
           r = req[:ro].__send__(req[:msg], *req[:argv]) { |*x|
             jump_error = nil

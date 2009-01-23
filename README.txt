@@ -10,19 +10,19 @@ available in the Ruby standard library.
 
 == FEATURES/PROBLEMS:
 
-This is a simple but working DRb server implementation that uses
-EventMachine as its basis, rather than the default implementation that
-uses traditional Ruby sockets.  This should be somewhat more scalable
-than a server using the standard DRb library.
+This is a simple but working DRb client/server implementation that
+uses EventMachine as its basis, rather than the default implementation
+that uses traditional Ruby sockets.  This should at the very least
+play better with other programs that have an EventMachine event loop,
+and hopefully provide somewhat better scalability.
 
 Obviously, this is a quick and dirty release, just to get something
-out there, and of course it has a number of limitations.
+out there, and of course it has a number of limitations:
 
-* We still don't have a DRb client.  We use the client implementation
-  of the standard DRb.
 * No SSL support.
 * No support for ACLs.
-* No unit tests so it probably still has a lot of bugs.
+* No support for DRb over Unix domain sockets.
+* Only the basic unit tests
 * Many standard configuration options for DRb still unsupported
 
 These and many other problems are scheduled to be addressed in the
@@ -30,8 +30,11 @@ next release.
 
 == SYNOPSIS:
 
-Creating a server using EMDRb has been made as close as possible to
-making one with the standard library DRb:
+EMDRb basically reopens several classes and adds methods and overrides
+some methods in the basic distributed Ruby implementation to make it
+use EventMachine's infrastructure instead of the normal networking
+layer.  One could do the following, which is practically identical to
+one of the examples for distributed Ruby:
 
   require 'emdrb'
 
@@ -44,8 +47,35 @@ making one with the standard library DRb:
   end
 
   $SAFE=1
-  EMDRb.start_service(URI, TimeServer.new)
-  EMDRb.thread.join
+  DRb.start_service(URI, TimeServer.new)
+  DRb.thread.join
+
+The corresponding client code could be made nearly identical:
+
+  require 'emdrb'
+
+  SERVER_URI="druby://localhost:8787"
+
+  DRb.start_service
+   
+  timeserver = DRbObject.new_with_uri(SERVER_URI)
+  puts timeserver.get_current_time 
+
+Or it could be written to use of asynchronous calls:
+
+  require 'emdrb'
+
+  SERVER_URI="druby://localhost:8787"
+
+  DRb.start_service
+   
+  timeserver = DRbObject.new_with_uri(SERVER_URI)
+
+  EventMachine::next_tick do
+    timeserver.async_call(:get_current_time).callback do |res|
+      puts res
+    end
+  end
 
 == REQUIREMENTS:
 
@@ -57,9 +87,9 @@ making one with the standard library DRb:
 
 == LICENSE:
 
-Copyright (c) 2008 Rafael R. Sevilla.  You can redistribute it and/or
-modify it under the same terms as Ruby.  Please see the file COPYING for
-more details.
+Copyright © 2008, 2009 Rafael R. Sevilla.  You can redistribute it
+and/or modify it under the same terms as Ruby.  Please see the file
+COPYING for more details.
 
-
+$Id$
 

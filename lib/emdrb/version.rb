@@ -25,8 +25,8 @@ module EMDRb
   module Version
 
     MAJOR = 0
-    MINOR = 1
-    TINY = 2
+    MINOR = 2
+    TINY = 0
 
     # The version of EMDRb in use.
     STRING = [ MAJOR, MINOR, TINY ].join(".")

@@ -33,22 +33,24 @@ else
   raise "specify emdrb or drb on the command line"
 end
 
-pidfile = File.expand_path(File.join(File.dirname(__FILE__), "drbserver.pid"))
-if File.exist?(pidfile)
-  exit(0)
+if ARGV[1].nil?
+  pidfile = File.expand_path(File.join(File.dirname(__FILE__), "drbserver.pid"))
+  if File.exist?(pidfile)
+    exit(0)
+  end
+#  logfile = File.expand_path(File.join(File.dirname(__FILE__), "drbserver.log"))
+  Daemonize.daemonize
+  pid = Process.pid
+  File.open(pidfile, "w") { |fp| fp.write(pid.to_s) }
+
+  handler = lambda do
+    File.delete(pidfile)
+    exit(0)
+  end
+
+  trap("SIGTERM", handler)
+  trap("SIGINT", handler)
 end
-Daemonize.daemonize
-pid = Process.pid
-File.open(pidfile, "w") { |fp| fp.write(pid.to_s) }
-
-handler = lambda do
-  File.delete(pidfile)
-  exit(0)
-end
-
-trap("SIGTERM", handler)
-trap("SIGINT", handler)
-
 
 class TestServer
   def identity(x)

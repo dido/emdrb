@@ -23,7 +23,7 @@
 # using either the standard DRb or EMDRb depending on what is being tested.
 #
 require 'daemons'
-
+Thread.abort_on_exception = true
 if ARGV[0] == "emdrb"
   $LOAD_PATH << File.join(File.dirname(__FILE__), '../lib/')
   require 'emdrb'

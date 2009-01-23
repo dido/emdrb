@@ -163,11 +163,11 @@ module DRb
     # This method will perform a method action if a block is not specified.
     #
     def perform_without_block
-      if Proc == @front && @request[:msg] == :__drb_yield
+      if Proc == @request[:ro] && @request[:msg] == :__drb_yield
         ary = (@request[:argv].size == 1) ? @request[:argv] : [@request[:argv]]
         return(ary.collect(&@front)[0])
       end
-      return(@front.__send__(@request[:msg], *@request[:argv]))
+      return(@request[:ro].__send__(@request[:msg], *@request[:argv]))
     end
 
     ##
@@ -186,25 +186,27 @@ module DRb
     # Perform with a method action with a specified block.
     #
     def perform_with_block
-      @front.__send__(@request[:msg], *@request[:argv]) do |*x|
-        jump_error = nil
-        begin
-          block_value = block_yield(x)
-        rescue LocalJumpError
-          jump_error = $!
-        end
-        if jump_error
-          case jump_error.reason
-          when :retry
-            retry
-          when :break
-            break(jump_error.exit_value)
-          else
-            raise jump_error
+      Thread.new do
+        @request[:ro].__send__(@request[:msg], *@request[:argv]) do |*x|
+          jump_error = nil
+          begin
+            block_value = block_yield(x)
+          rescue LocalJumpError
+            jump_error = $!
           end
+          if jump_error
+            case jump_error.reason
+            when :retry
+              retry
+            when :break
+              break(jump_error.exit_value)
+            else
+              raise jump_error
+            end
+          end
+          block_value
         end
-        block_value
-      end
+      end.value
     end
 
     ##
@@ -214,7 +216,7 @@ module DRb
       result = nil
       succ = false
       begin
-        @server.check_insecure_method(@front, @request[:msg])
+        @server.check_insecure_method(@request[:ro], @request[:msg])
         if $SAFE < @safe_level
           info = Thread.current['DRb']
           result = Thread.new {
@@ -367,7 +369,7 @@ module DRb
       if host.size == 0
         host = self.class.host_inaddr_any
       end
-      EventMachine::start_server(host, port, DRbServerProtocol) do |conn|
+      r = EventMachine::start_server(host, port, DRbServerProtocol) do |conn|
         Thread.current['DRb'] = { 'client' => conn, 'server' => self }
         conn.front = @front
         conn.load_limit = @config[:load_limit]
@@ -376,6 +378,13 @@ module DRb
         conn.server = self
         conn.safe_level = self.safe_level
       end
+      # NOTE: This is an undocumented method in EventMachine.  Revise
+      # as necessary when we receive feedback from the EventMachine
+      # developers on the canonical way to determine the real port number
+      # if port 0 was specified in start_server.
+      addr = Socket.unpack_sockaddr_in(EventMachine.get_sockname(r))
+      port = addr[0] if port == 0
+      @uri = "druby://#{host}:#{port}"
     end
 
   end

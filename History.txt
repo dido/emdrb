@@ -1,7 +1,17 @@
-== 0.1.0 / 2008-10-23
+== 0.2.0 / 2009-01-23
 
-* First public release
+* DRb client implementation, including asynchronous calls.
+* Changes so that DRb functionality is as untouched as possible.
+
+== 0.1.2 / 2009-01-21
+
+* Maintenance release
 
 == 0.1.1 / 2008-12-02
 
 * Basic unit tests
+
+== 0.1.0 / 2008-10-23
+
+* First public release
+

@@ -85,6 +85,11 @@ Or it could be written to use of asynchronous calls:
 
 * Standard gem installation: 'sudo gem install' ought to do the trick.
 
+Note that you will need the daemons gem ('sudo gem install daemons')
+if you would like to run the rspec tests that are included with
+EMDRb.  Daemons is not required to use EMDRb otherwise, and as such it
+is not listed as a hard dependency in the gem install.
+
 == LICENSE:
 
 Copyright © 2008, 2009 Rafael R. Sevilla.  You can redistribute it

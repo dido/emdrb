@@ -29,6 +29,37 @@ module DRb
   DEFAULT_SAFE_LEVEL = 0
 
   ##
+  # If a front object includes DRbEMSafe, the DRb server will not
+  # run the front object's methods in a separate thread, but as part
+  # of the event loop itself.  This allows the ability to make use of
+  # EventMachine's capabilities more easily.
+  # 
+  module DRbEMSafe
+    module ClassMethods
+      ##
+      # Mark the method as a deferrable method.  Such a method must
+      # accept two arguments, an array of parameters and a block
+      # (usually nil).  The method must always return a Deferrable
+      # which should be set to success with the result of the method
+      # when the method is done, and failed with the exception object
+      # if the method failed.  The block, if any, is a DRbObject that
+      # should be invoked by send_async(:call).
+      def deferrable_method(method_name)
+        @deferrable_methods ||= {}
+        @deferrable_methods[method_name] = true
+      end
+
+      def deferrable_method?(method_name)
+        return(@deferrable_methods.has_key?(method_name))
+      end
+    end
+
+    def self.included(base)
+      base.extend(ClassMethods)
+    end
+  end
+
+  ##
   # Common protocol elements for distributed Ruby, used by both the
   # client and server.
   #
@@ -188,7 +219,6 @@ module DRb
             end
           end
         rescue
-          p $!
           EventMachine::next_tick do
             df.set_deferred_status(:failed, $!)
           end
@@ -265,6 +295,14 @@ module DRb
     #
     def perform
       @server.check_insecure_method(@request[:ro], @request[:msg])
+      if @request[:ro].kind_of?(DRbEMSafe) &&
+          @request[:ro].class.deferrable_method?(@request[:msg])
+        # A deferrable method will return an actual Deferrable that we
+        # can actually use.
+        return(@request[:ro].__send__(@request[:msg],
+                                      @request[:argv],
+                                      @request[:block]))
+      end
       return((@request[:block]) ? perform_with_block : perform_without_block)
     end
 

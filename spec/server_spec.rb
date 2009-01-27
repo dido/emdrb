@@ -48,4 +48,9 @@ describe "EMDRb Server" do
     @obj.sum(1,2,3,4,5).should == 15
   end
 
+  it "should use deferrable methods correctly" do
+    res = @obj.block_df(1,2,3,4,5) { |x| x }
+    res.should == 15
+  end
+
 end

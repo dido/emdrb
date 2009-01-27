@@ -1,3 +1,8 @@
+== 0.3.0 / 2009-01-27
+
+* Added provisions for DRb servers to have methods which are
+  aware of EventMachine.
+
 == 0.2.0 / 2009-01-23
 
 * DRb client implementation, including asynchronous calls.

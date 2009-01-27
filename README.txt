@@ -26,7 +26,7 @@ out there, and of course it has a number of limitations:
 * Many standard configuration options for DRb still unsupported
 
 These and many other problems are scheduled to be addressed in the
-next release.
+following releases.
 
 == SYNOPSIS:
 

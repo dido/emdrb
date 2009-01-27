@@ -72,6 +72,40 @@ class TestServer
   end
 end
 
+if ARGV[0] == "emdrb"
+  class TestServer
+    include DRb::DRbEMSafe
+    include EventMachine::Deferrable
+
+    deferrable_method :block_df
+
+    ##
+    # Simple example of a deferrable method structured as a state
+    # machine.
+    def block_df(args, block, state={:index => 0, :retval => 0 })
+      if state[:index] >= args.length
+        self.set_deferred_status(:succeeded, state[:retval])
+        return(self)
+      end
+
+      df = block.send_async(:call, args[state[:index]])
+      df.callback do |succ,result|
+        if succ
+          state[:retval] += result
+          state[:index] += 1
+          EventMachine::next_tick do
+            self.block_df(args, block, state)
+          end
+        else
+          self.set_deferred_status(:failed,  res)
+        end
+      end
+      df.errback do |res|
+      end
+      return(self)
+    end
+  end
+end
 
 
 DRb.start_service("druby://:12345", TestServer.new)

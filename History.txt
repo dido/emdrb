@@ -2,6 +2,9 @@
 
 * Added provisions for DRb servers to have methods which are
   aware of EventMachine.
+* Made internal changes so that other transports (e.g. Unix domain sockets)
+  can be more easily supported.
+* Added support for standard DRb ACLs.
 
 == 0.2.0 / 2009-01-23
 

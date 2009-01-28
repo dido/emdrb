@@ -29,10 +29,14 @@ module DRb
   DEFAULT_SAFE_LEVEL = 0
 
   ##
-  # If a front object includes DRbEMSafe, the DRb server will not
-  # run the front object's methods in a separate thread, but as part
-  # of the event loop itself.  This allows the ability to make use of
-  # EventMachine's capabilities more easily.
+  # The DRbEMSafe module allows the designation of certain methods as
+  # 'deferrable methods' which are run from within the event loop rather
+  # than within a thread.  It gives one the ability to circumvent the
+  # sugaring and black magic that EMDRb does in order to provide the
+  # complete illusion that remote objects are the same as local ones,
+  # most especially with respect to blocks.  This may also provide more
+  # performance if one is using a method that itself makes use of
+  # Deferrables to accomplish the job.
   # 
   module DRbEMSafe
     module ClassMethods
@@ -43,7 +47,10 @@ module DRb
       # which should be set to success with the result of the method
       # when the method is done, and failed with the exception object
       # if the method failed.  The block, if any, is a DRbObject that
-      # should be invoked by send_async(:call).
+      # should be invoked by send_async(:call).  Using a direct call
+      # on the DRbObject will most likely result in a threading
+      # deadlock since deferrable methods are invoked from the main
+      # thread!
       def deferrable_method(method_name)
         @deferrable_methods ||= {}
         @deferrable_methods[method_name] = true
@@ -298,7 +305,7 @@ module DRb
       if @request[:ro].kind_of?(DRbEMSafe) &&
           @request[:ro].class.deferrable_method?(@request[:msg])
         # A deferrable method will return an actual Deferrable that we
-        # can actually use.
+        # can use instead.
         return(@request[:ro].__send__(@request[:msg],
                                       @request[:argv],
                                       @request[:block]))
@@ -385,40 +392,15 @@ module DRb
   end
 
   ##
-  # Class representing a drb server instance.  This subclasses DRb::DRbServer
-  # for brevity.  DRbServer instances are normally created indirectly using
-  # either EMDRb.start service (which emulates DRb.start_service) or via
-  # EMDRb.start_drbserver (designed to be called from within an event loop).
-  class DRbServer
-    def initialize(uri=nil, front=nil, config_or_acl=nil)
-      if Hash === config_or_acl
-	config = config_or_acl.dup
-      else
-	acl = config_or_acl || @@acl
-	config = {
-	  :tcp_acl => acl
-	}
-      end
-
-      @uri = (uri.nil?) ? "druby://:0" : uri
-      @config = self.class.make_config(config)
-      @front = front
-      @idconv = @config[:idconv]
-      @safe_level = @config[:safe_level]
-      EventMachine::next_tick do
-        @thread = Thread.current
-      end
-    end
-
+  # The default DRb transport, which performs communication over a TCP
+  # socket.  These protocol objects are used in a different way from the
+  # way they are used internally by the standard DRb.  In the standard
+  # DRb, open_server is a class method.  Here, it is an instance method
+  # that is called when the server object is started.
+  class DRbTCPSocket
     private
 
-    def self.host_inaddr_any
-      host = Socket::gethostname
-      begin
-        host = Socket::gethostbyname(host)[0]
-      rescue
-        host = "localhost"
-      end
+    def self.host_inaddr_any(host)
       infos = Socket::getaddrinfo(host, nil,
                                   Socket::AF_UNSPEC,
                                   Socket::SOCK_STREAM,
@@ -437,16 +419,173 @@ module DRb
 
     public
 
+    attr_reader :uri
+    attr_reader :option
+
+    def initialize(uri, config={})
+      @uri = (uri.nil?) ? 'druby://:0' : uri
+      @host, @port, @option = self.class.parse_uri(@uri)
+      @host.untaint
+      @port.untaint
+      @config = config
+      @acl = config[:tcp_acl]
+      if @host.size == 0
+        @host = self.class.getservername
+        @connhost = self.class.host_inaddr_any(@host)
+      end
+    end
+
+    ##
+    # This method starts a TCP server using EventMachine.
+    def start_server(prot)
+      r = EventMachine::start_server(@host, @port, prot) do |conn|
+        if block_given?
+          yield conn
+        end
+      end
+      # NOTE: This is an undocumented method in EventMachine.  Revise
+      # as necessary when we receive feedback from the EventMachine
+      # developers on the canonical way to determine the real port number
+      # if port 0 was specified in start_server.
+      addr = Socket.unpack_sockaddr_in(EventMachine.get_sockname(r))
+      @port = addr[0] if @port == 0
+      @uri = "druby://#{@host}:#{@port}"
+    end
+
+    ##
+    # This method makes a client connection using EventMachine
+    def client_connect(prot)
+      EventMachine.connect(@host, @port, prot) do |c|
+        if block_given?
+          yield c
+        end
+      end
+    end
+  end
+
+  ##
+  # Module managing the underlying network transport(s) used by EMDRb.
+  # This is analogous to the DRbProtocol module used by the original
+  # DRb.  The network transport classes must define the following
+  # class method:
+  #
+  #   [uri_option(uri, config)] Take a URI, possibly containing an option
+  #                             component (e.g. a trailing '?param=val'), 
+  #                             and return a [uri, option] tuple.
+  #
+  # A network transport class is instantiated whenever an EMDRb client
+  # or server starts operation, provided with the URI and any configuration
+  # options.  The transport initialize method should raise a DRbBadScheme
+  # exception if the URI is invalid.  This is how the DRbTransport module
+  # determines which transport implementation serves a particular URI.
+  #
+  # The transport class instance must provide the following methods:
+  #
+  #   [start_server(prot)] Open a server listening at the URI specified when
+  #                        the transport instance was created using the
+  #                        protocol handler module or class +prot+.  A block
+  #                        passed here will be called whenever a connection is
+  #                        made to the server, just after the post_init method
+  #                        of the handler is called.
+  #   [client_connect(prot)] Open a client connection to the URI specified when
+  #                          the when the transport instance was created, using
+  #                          the protocol handler module or class +prot+.  A
+  #                          block passed here will be called when the
+  #                          connection has been initiated, just after the
+  #                          post_init method of the handler is called.
+  # 
+  module DRbTransport
+    @transports = [DRbTCPSocket]
+
+    def add_transport(tr)
+      @transports.push(tr)
+    end
+    module_function :add_transport
+
+    ##
+    # Rather than open_server, EMDRb uses this protocol factory method
+    # to create a protocol object instance that DRbServer and DRbClient
+    # can use later on when they want to connect.
+    def factory(uri, config, first=true)
+      @transports.each do |t|
+        begin
+          return(t.new(uri, config))
+	rescue DRbBadScheme
+	end
+      end
+      if first && (config[:auto_load] != false)
+	auto_load(uri, config)
+	return factory(uri, config, false)
+      end
+      raise DRbBadURI, 'can\'t parse uri:' + uri
+    end
+    module_function :factory
+
+    ##
+    # Parse +uri+ into a [uri, option] pair.
+    #
+    # The DRbTransport module asks each registered transport class in turn to
+    # try to parse the URI.  Each transport signals that it does not handle
+    # that URI by raising a DRbBadScheme error.  If no transport recognizes
+    # the URI, then a DRbBadURI error is raised.  
+    def uri_option(uri, config, first=true)
+      @transports.each do |t|
+	begin
+	  uri, opt = t.uri_option(uri, config)
+	  # opt = nil if opt == ''
+	  return uri, opt
+	rescue DRbBadScheme
+	end
+      end
+      if first && (config[:auto_load] != false)
+	auto_load(uri, config)
+        return uri_option(uri, config, false)
+      end
+      raise DRbBadURI, 'can\'t parse uri:' + uri
+    end
+    module_function :uri_option
+
+    def auto_load(uri, config)  # :nodoc:
+      if uri =~ /^drb([a-z0-9]+):/
+	require("emdrb/#{$1}") rescue nil
+      end
+    end
+    module_function :auto_load
+
+  end
+
+  ##
+  # Class representing a drb server instance.  This subclasses DRb::DRbServer
+  # for brevity.  DRbServer instances are normally created indirectly using
+  # either EMDRb.start service (which emulates DRb.start_service) or via
+  # EMDRb.start_drbserver (designed to be called from within an event loop).
+  class DRbServer
+    def initialize(uri=nil, front=nil, config_or_acl=nil)
+      if Hash === config_or_acl
+	config = config_or_acl.dup
+      else
+	acl = config_or_acl || @@acl
+	config = {
+	  :tcp_acl => acl
+	}
+      end
+
+      @config = self.class.make_config(config)
+      @protocol = DRbTransport.factory(uri, config)
+      @front = front
+      @idconv = @config[:idconv]
+      @safe_level = @config[:safe_level]
+      EventMachine::next_tick do
+        @thread = Thread.current
+      end
+    end
+
     ##
     # Start a DRb server from within an event loop.
     #
     def start_drb_server
       @thread = Thread.current
-      host, port, opt = DRb::parse_uri_drb(@uri)
-      if host.size == 0
-        host = self.class.host_inaddr_any
-      end
-      r = EventMachine::start_server(host, port, DRbServerProtocol) do |conn|
+      @protocol.start_server(DRbServerProtocol) do |conn|
         Thread.current['DRb'] = { 'client' => conn, 'server' => self }
         conn.front = @front
         conn.load_limit = @config[:load_limit]
@@ -455,31 +594,10 @@ module DRb
         conn.server = self
         conn.safe_level = self.safe_level
       end
-      # NOTE: This is an undocumented method in EventMachine.  Revise
-      # as necessary when we receive feedback from the EventMachine
-      # developers on the canonical way to determine the real port number
-      # if port 0 was specified in start_server.
-      addr = Socket.unpack_sockaddr_in(EventMachine.get_sockname(r))
-      port = addr[0] if port == 0
-      @uri = "druby://#{host}:#{port}"
+      @uri = @protocol.uri
     end
 
   end
-
-  def parse_uri_drb(uri)
-    if uri =~ /^druby:\/\/(.*?):(\d+)(\?(.*))?$/
-      host = $1
-      port = $2.to_i
-      option = $4
-      [host, port, option]
-    else
-      unless uri =~ /^druby:/
-        raise DRb::DRbBadScheme.new(uri)
-      end
-      raise DRb::DRbBadURI.new('can\'t parse uri:' + uri)
-    end
-  end
-  module_function :parse_uri_drb
 
   @eventloop = nil
 
@@ -493,10 +611,7 @@ module DRb
   end
   module_function :start_drbserver
 
-  ##
-  # This start_service emulates DRb#start_service.
-  #
-  def start_service(uri=nil, front=nil, config=nil)
+  def start_evloop
     unless EventMachine::reactor_running?
       @eventloop = Thread.new do
         EventMachine::run do
@@ -505,6 +620,14 @@ module DRb
         end
       end
     end
+  end
+  module_function :start_evloop
+
+  ##
+  # This start_service emulates DRb#start_service.
+  #
+  def start_service(uri=nil, front=nil, config=nil)
+    DRb.start_evloop
     queue = Queue.new
     EventMachine::next_tick do
       queue << self.start_drbserver(uri, front, config)
@@ -582,9 +705,8 @@ module DRb
       @ref = nil
       if obj.nil?
 	return if uri.nil?
-        @uri = uri
-        ref = nil
-        @host, @port, @opt = DRb::parse_uri_drb(@uri)
+        @uri, option = DRbTransport.uri_option(uri, DRb.config)
+        @ref = DRbURIOption.new(option) unless option.nil?
       else
 	@uri = uri ? uri : (DRb.uri rescue nil)
         @ref = obj ? DRb.to_id(obj) : nil
@@ -597,10 +719,9 @@ module DRb
     # callbacks can be attached.
     def send_async(msg_id, *a, &b)
       df = EventMachine::DefaultDeferrable.new
-      if @host.nil? || @port.nil?
-        @host, @port, @opt = DRb::parse_uri_drb(@uri)
-      end
-      EventMachine.connect(@host, @port, DRbClientProtocol) do |c|
+      @protocol ||= DRbTransport.factory(@uri, DRb.config)
+
+      @protocol.client_connect(DRbClientProtocol) do |c|
         c.ref = self
         c.msg_id = msg_id
         c.args = a
@@ -613,7 +734,7 @@ module DRb
     ##
     # Route method calls to the referenced object.  This synchronizes
     # an asynchronous call by using a Queue to synchronize the DRb
-    # event thread with the calling thread, so use of this mechanism,
+    # event thread with the calling thread, so use of this mechanism
     # to make method calls within an event loop will thus result in a
     # threading deadlock!  Use the send_async method if you want to
     # use EMDRb from within an event loop.
@@ -642,5 +763,4 @@ module DRb
     end
 
   end
-
 end

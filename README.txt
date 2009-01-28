@@ -16,12 +16,11 @@ that uses traditional Ruby sockets.  This should at the very least
 play better with other programs that have an EventMachine event loop,
 and hopefully provide somewhat better scalability.
 
-Obviously, this is a quick and dirty release, just to get something
-out there, and of course it has a number of limitations:
+This release is more fully featured, however there are still a number
+of important missing features:
 
-* No SSL support.
-* No support for ACLs.
-* No support for DRb over Unix domain sockets.
+* No SSL support.  To support this fully, EventMachine needs to have
+  more comprehensive SSL/TLS support.
 * RSpec tests are very basic, and need a lot more comprehensive work.
 * Many standard configuration options for DRb still unsupported
 
@@ -30,11 +29,11 @@ following releases.
 
 == SYNOPSIS:
 
-EMDRb basically reopens several classes and adds methods and overrides
-some methods in the basic distributed Ruby implementation to make it
-use EventMachine's infrastructure instead of the normal networking
-layer.  One could do the following, which is practically identical to
-one of the examples for distributed Ruby:
+EMDRb basically reopens several classes, adds methods, and overrides other
+methods in the basic distributed Ruby implementation to make it use
+EventMachine's infrastructure instead of the traditional Ruby networking
+code.  One could do the following, which is practically identical to one
+of the examples for distributed Ruby:
 
   require 'emdrb'
 

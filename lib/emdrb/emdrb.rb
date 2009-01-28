@@ -171,6 +171,11 @@ module DRb
     attr_accessor :safe_level
 
     ##
+    # The peer address for this connection.
+    attr_accessor :peer_addr
+
+
+    ##
     # The post initialization process sets up the default load
     # and argument length limits, the idconv object, the initial
     # state of the message packet state machine, clear the
@@ -183,7 +188,7 @@ module DRb
       @state = :ref
       @msgbuffer = ""
       @request = {}
-      @server = @argv = @argc = nil
+      @peer_addr = @server = @argv = @argc = nil
     end
 
     private
@@ -439,9 +444,28 @@ module DRb
     # This method starts a TCP server using EventMachine.
     def start_server(prot)
       r = EventMachine::start_server(@host, @port, prot) do |conn|
+        peeraddr = Socket.unpack_sockaddr_in(conn.get_peername)[1]
+        @config[:reverse_dns] = true
+        if @config[:reverse_dns]
+          a = Socket.gethostbyname(peeraddr)
+          peeraddr = begin
+                       [Socket.gethostbyaddr(a[3], a[2])[0], peeraddr]
+                     rescue
+                       [nil, peeraddr]
+                     end
+        else
+          peeraddr = [nil, peeraddr]
+        end
+        conn.peer_addr = [nil, nil] + peeraddr
+
         if block_given?
           yield conn
         end
+
+        if @acl && !@acl.allow_addr?(conn.peer_addr)
+          conn.close_connection
+        end
+
       end
       # NOTE: This is an undocumented method in EventMachine.  Revise
       # as necessary when we receive feedback from the EventMachine

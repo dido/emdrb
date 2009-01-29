@@ -16,8 +16,19 @@ that uses traditional Ruby sockets.  This should at the very least
 play better with other programs that have an EventMachine event loop,
 and hopefully provide somewhat better scalability.
 
-This release is more fully featured, however there are still a number
-of important missing features:
+EMDRb already supports the following features of the standard DRb:
+
+* Clients and servers over TCP/IP
+* Clients and servers over Unix domain sockets
+* Standard distributed Ruby ACLs
+
+It also has the following extensions, which derive from its basis in
+EventMachine:
+
+* Client-side asynchronous method calls
+* EventMachine-aware server methods capable of asynchrony.
+
+It is, however, not yet a complete replacement for the standard DRb:
 
 * No SSL support.  To support this fully, EventMachine needs to have
   more comprehensive SSL/TLS support.

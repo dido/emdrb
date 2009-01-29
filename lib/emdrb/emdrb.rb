@@ -443,7 +443,14 @@ module DRb
     ##
     # This method starts a TCP server using EventMachine.
     def start_server(prot)
-      r = EventMachine::start_server(@host, @port, prot) do |conn|
+      # If start_server is called several times, only the one started
+      # server will be made.
+      if @conndesc
+        return(@conndesc)
+      end
+      @conndesc = EventMachine::start_server(@host, @port, prot) do |conn|
+        # Obtain the address of the peer, and check it against
+        # any ACLs that might have been specified.
         peeraddr = Socket.unpack_sockaddr_in(conn.get_peername)[1]
         @config[:reverse_dns] = true
         if @config[:reverse_dns]
@@ -471,9 +478,10 @@ module DRb
       # as necessary when we receive feedback from the EventMachine
       # developers on the canonical way to determine the real port number
       # if port 0 was specified in start_server.
-      addr = Socket.unpack_sockaddr_in(EventMachine.get_sockname(r))
+      addr = Socket.unpack_sockaddr_in(EventMachine.get_sockname(@conndesc))
       @port = addr[0] if @port == 0
       @uri = "druby://#{@host}:#{@port}"
+      return(@conndesc)
     end
 
     ##
@@ -482,6 +490,19 @@ module DRb
       EventMachine.connect(@host, @port, prot) do |c|
         if block_given?
           yield c
+        end
+      end
+    end
+
+
+    ##
+    # This method closes a server that has been started using this
+    # protocol object instance.
+    def stop_server
+      if @conndesc
+        @conndesc = nil
+        if EventMachine::reactor_running?
+          EventMachine::stop_server(@conndesc)
         end
       end
     end
@@ -517,6 +538,7 @@ module DRb
   #                          block passed here will be called when the
   #                          connection has been initiated, just after the
   #                          post_init method of the handler is called.
+  #   [stop_server] Stop a server that was started with start_server.
   # 
   module DRbTransport
     @transports = [DRbTCPSocket]
@@ -621,6 +643,18 @@ module DRb
       @uri = @protocol.uri
     end
 
+    ##
+    # Stop this server.
+    def stop_service
+      DRb.remove_server(self)
+      if Thread.current['DRb'] && Thread.current['DRb']['server'] == self
+        Thread.current['DRb']['stop_service'] = true
+      else
+        @thread.kill
+      end
+      @protocol.stop_server
+    end
+
   end
 
   @eventloop = nil
@@ -631,6 +665,7 @@ module DRb
   def start_drbserver(uri=nil, front=nil, config=nil)
     serv = DRbServer.new(uri, front, config)
     serv.start_drb_server
+    DRb.regist_server(serv)
     return(serv)
   end
   module_function :start_drbserver
@@ -638,9 +673,16 @@ module DRb
   def start_evloop
     unless EventMachine::reactor_running?
       @eventloop = Thread.new do
-        EventMachine::run do
-          # Start an empty event loop.  The DRb server(s) will be started
-          # by EM#next_tick calls.
+        begin
+          EventMachine::run do
+            # Start an empty event loop.  The DRb server(s) will be started
+            # by EM#next_tick calls.
+          end
+        ensure
+          # close all servers if the event loop ends for whatever reason
+          @server.each do |uri,srv|
+            srv.stop_service
+          end
         end
       end
     end
@@ -658,7 +700,6 @@ module DRb
     end
     serv = queue.shift
     @primary_server = serv
-    DRb.regist_server(serv)
     return(serv)
   end
   module_function :start_service

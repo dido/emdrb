@@ -38,6 +38,10 @@ module DRb
     end
 
     def start_server(prot)
+      if @conndesc
+        return(@conndesc)
+      end
+
       lock = nil
       if @filename.nil?
         tmpdir = Dir::tmpdir
@@ -59,7 +63,8 @@ module DRb
         end
       end
 
-      EventMachine::start_unix_domain_server(@filename, prot) do |conn|
+      @conndesc = EventMachine::start_unix_domain_server(@filename,
+                                                         prot) do |conn|
         if block_given?
           yield conn
         end
@@ -76,6 +81,11 @@ module DRb
           yield c
         end
       end
+    end
+
+    def stop_server
+      super
+      File.unlink(@filename)
     end
   end
 

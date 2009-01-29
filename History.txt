@@ -4,6 +4,7 @@
   aware of EventMachine.
 * Made internal changes so that other transports can be more easily supported.
 * Unix domain socket transport added.
+* Connection closing and stop_service are made to work.
 * Added support for standard DRb ACLs.
 
 == 0.2.0 / 2009-01-23

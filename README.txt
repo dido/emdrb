@@ -102,6 +102,11 @@ if you would like to run the rspec tests that are included with
 EMDRb.  Daemons is not required to use EMDRb otherwise, and as such it
 is not listed as a hard dependency in the gem install.
 
+If you want to install it manually, you can always download it at the
+EMDRb project page at:
+
+http://rubyforge.org/projects/emdrb
+
 == LICENSE:
 
 Copyright © 2008, 2009 Rafael R. Sevilla.  You can redistribute it

@@ -174,7 +174,6 @@ module DRb
     # The peer address for this connection.
     attr_accessor :peer_addr
 
-
     ##
     # The post initialization process sets up the default load
     # and argument length limits, the idconv object, the initial
@@ -209,10 +208,9 @@ module DRb
     # also further execute the method call in its own independent thread
     # and safe level invocations are also taken care of herein.
     def perform_without_block
-      df = EventMachine::DefaultDeferrable.new
       info = Thread.current['DRb']
       req = @request
-      Thread.new do
+      op = lambda do
         Thread.current['DRb'] = info
         if $SAFE < @safe_level
           $SAFE = @safe_level
@@ -221,22 +219,16 @@ module DRb
           if Proc == req[:ro] && req[:msg] == :__drb_yield
             ary = (req[:argv].size == 1) ? req[:argv] :
               [req[:argv]]
-            EventMachine::next_tick do
-              df.set_deferred_status(:succeeded, ary.collect(&@front)[0])
-            end
+            [true, ary.collect(&@front)[0]]
           else
             r = req[:ro].__send__(req[:msg], *req[:argv])
-            EventMachine::next_tick do
-              df.set_deferred_status(:succeeded, r)
-            end
+            [true, r]
           end
         rescue
-          EventMachine::next_tick do
-            df.set_deferred_status(:failed, $!)
-          end
+          [false, $!]
         end
       end
-      return(df)
+      return(op)
     end
 
     ##
@@ -260,10 +252,9 @@ module DRb
     # I suppose there must be a way to do it without using threads (possibly
     # by using call/cc perhaps?), but I suppose this should be okay.
     def perform_with_block
-      df = EventMachine::DefaultDeferrable.new
       info = Thread.current['DRb']
       req = @request
-      Thread.new do
+      op = lambda do
         Thread.current['DRb'] = info
         if $SAFE < @safe_level
           $SAFE = @safe_level
@@ -289,14 +280,12 @@ module DRb
             end
             block_value
           }
-          EventMachine::next_tick { df.set_deferred_status(:succeeded, r) }
+          [true, r]
         rescue Exception => e
-          EventMachine::next_tick do
-            df.set_deferred_status(:failed, e)
-          end
+          [false, e]
         end
       end
-      return(df)
+      return(op)
     end
 
     ##
@@ -315,7 +304,19 @@ module DRb
                                       @request[:argv],
                                       @request[:block]))
       end
-      return((@request[:block]) ? perform_with_block : perform_without_block)
+      df = EventMachine::DefaultDeferrable.new
+      op = (@request[:block]) ? perform_with_block : perform_without_block
+      callback = lambda do |res|
+        succ, val = res
+        if succ
+          df.set_deferred_status(:succeeded, val)
+        else
+          df.set_deferred_status(:failed, val)
+        end
+      end
+
+      EventMachine::defer(op, callback)
+      return(df)
     end
 
     def to_obj(ref)

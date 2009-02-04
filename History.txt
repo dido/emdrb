@@ -1,3 +1,6 @@
+== 0.3.1 / 2009-02-04
+* Used EventMachine::defer instead of spawning own threads
+
 == 0.3.0 / 2009-01-27
 
 * Added provisions for DRb servers to have methods which are

@@ -308,11 +308,7 @@ module DRb
       op = (@request[:block]) ? perform_with_block : perform_without_block
       callback = lambda do |res|
         succ, val = res
-        if succ
-          df.set_deferred_status(:succeeded, val)
-        else
-          df.set_deferred_status(:failed, val)
-        end
+        df.set_deferred_status((succ) ? :succeeded : :failed, val)
       end
 
       EventMachine::defer(op, callback)

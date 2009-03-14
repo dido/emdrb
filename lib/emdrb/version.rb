@@ -22,13 +22,5 @@
 # EMDRb version code
 #
 module EMDRb
-  module Version
-
-    MAJOR = 0
-    MINOR = 3
-    TINY = 1
-
-    # The version of EMDRb in use.
-    STRING = [ MAJOR, MINOR, TINY ].join(".")
-  end  
+  VERSION = "0.3.2"
 end

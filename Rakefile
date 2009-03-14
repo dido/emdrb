@@ -1,5 +1,4 @@
-# -*- coding: utf-8 -*-
-#  -*- Ruby -*-
+# -*- coding: utf-8; mode: Ruby -*-
 #
 # Author:: Rafael R. Sevilla (mailto:dido@imperium.ph)
 # Copyright:: Copyright © 2008, 2009 Rafael R. Sevilla

@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 #  -*- Ruby -*-
 #
 # Author:: Rafael R. Sevilla (mailto:dido@imperium.ph)
@@ -20,7 +21,16 @@
 # See the file COPYING for complete licensing information.
 #----------------------------------------------------------------------------
 #
-load 'tasks/setup.rb'
+begin
+  require 'bones'
+  Bones.setup
+rescue LoadError
+  begin
+    load 'tasks/setup.rb'
+  rescue LoadError
+    raise RuntimeError, '### please install the "bones" gem ###'
+  end
+end
 
 ensure_in_path 'lib'
 require 'emdrb/version'
@@ -32,8 +42,8 @@ PROJ.authors = 'dido@imperium.ph'
 PROJ.email = 'dido@imperium.ph'
 PROJ.url = 'http://emdrb.rubyforge.org'
 PROJ.rubyforge.name = 'emdrb'
-PROJ.version = EMDRb::Version::STRING
-PROJ.dependencies = ["eventmachine"]
+PROJ.version = EMDRb::VERSION
+depend_on "eventmachine"
 
 PROJ.spec.opts << '--color'
 

@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 #
 # Author:: Rafael R. Sevilla (mailto:dido@imperium.ph)
 # Copyright:: Copyright © 2008, 2009 Rafael R. Sevilla
@@ -41,16 +42,10 @@ module DRb
   module DRbEMSafe
     module ClassMethods
       ##
-      # Mark the method as a deferrable method.  Such a method must
-      # accept two arguments, an array of parameters and a block
-      # (usually nil).  The method must always return a Deferrable
-      # which should be set to success with the result of the method
-      # when the method is done, and failed with the exception object
-      # if the method failed.  The block, if any, is a DRbObject that
-      # should be invoked by send_async(:call).  Using a direct call
-      # on the DRbObject will most likely result in a threading
-      # deadlock since deferrable methods are invoked from the main
-      # thread!
+      # Mark the method as a deferrable method.  Such a method must always
+      # return an object which includes EventMachine::Deferrable.  A block
+      # passed to such a method is actually a DRbObject reference which
+      # should be invoked using DRbEMSafe#dyield below.
       def deferrable_method(method_name)
         @deferrable_methods ||= {}
         @deferrable_methods[method_name] = true
@@ -58,6 +53,20 @@ module DRb
 
       def deferrable_method?(method_name)
         return(@deferrable_methods.has_key?(method_name))
+      end
+
+      ##
+      # Yield to a block in a deferrable method.  This invokes the block
+      # asynchronously, returning a Deferrable which should be used as
+      # one received from using DRbObject#send_async.  This should be
+      # the only mechanism used to invoke a block from within a deferrable
+      # method: using yield or block.call will probably produce unexpected
+      # results.
+      def dyield(block, x)
+        if x.size == 1 && x[0].class == Array
+          x[0] = DRbArray.new(x[0])
+        end
+        return(block.send_async(:call, *x))
       end
     end
 
@@ -301,8 +310,8 @@ module DRb
         # A deferrable method will return an actual Deferrable that we
         # can use instead.
         return(@request[:ro].__send__(@request[:msg],
-                                      @request[:argv],
-                                      @request[:block]))
+                                      *@request[:argv],
+                                      &@request[:block]))
       end
       df = EventMachine::DefaultDeferrable.new
       op = (@request[:block]) ? perform_with_block : perform_without_block
@@ -781,6 +790,17 @@ module DRb
     # callbacks can be attached.
     def send_async(msg_id, *a, &b)
       df = EventMachine::DefaultDeferrable.new
+      if DRb.here?(@uri)
+	obj = DRb.to_obj(@ref)
+	DRb.current_server.check_insecure_method(obj, msg_id)
+        begin
+          df.succeed([true, obj.__send__(msg_id, *a, &b)])
+        rescue
+          df.succeed([false, $!])
+        end
+        return(df)
+      end
+
       @protocol ||= DRbTransport.factory(@uri, DRb.config)
 
       @protocol.client_connect(DRbClientProtocol) do |c|
@@ -801,12 +821,6 @@ module DRb
     # threading deadlock!  Use the send_async method if you want to
     # use EMDRb from within an event loop.
     def method_missing(msg_id, *a, &b)
-      if DRb.here?(@uri)
-	obj = DRb.to_obj(@ref)
-	DRb.current_server.check_insecure_method(obj, msg_id)
-	return obj.__send__(msg_id, *a, &b) 
-      end
-
       q = Queue.new
       EventMachine::next_tick do
         df = self.send_async(msg_id, *a, &b)

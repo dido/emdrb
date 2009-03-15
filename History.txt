@@ -1,3 +1,6 @@
+== 0.3.2 / 2009-03-16
+* Deferrable method mechanism cleaned up
+
 == 0.3.1 / 2009-02-04
 * Used EventMachine::defer instead of spawning own threads
 

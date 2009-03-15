@@ -309,9 +309,15 @@ module DRb
           @request[:ro].class.deferrable_method?(@request[:msg])
         # A deferrable method will return an actual Deferrable that we
         # can use instead.
-        return(@request[:ro].__send__(@request[:msg],
-                                      *@request[:argv],
-                                      &@request[:block]))
+        begin
+          return(@request[:ro].__send__(@request[:msg],
+                                        *@request[:argv],
+                                        &@request[:block]))
+        rescue
+          df = EventMachine::DefaultDeferrable.new
+          df.fail($!)
+          return(df)
+        end
       end
       df = EventMachine::DefaultDeferrable.new
       op = (@request[:block]) ? perform_with_block : perform_without_block

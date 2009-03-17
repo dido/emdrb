@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 #
 # Author:: Rafael R. Sevilla (mailto:dido@imperium.ph)
 # Copyright:: Copyright © 2008, 2009 Rafael R. Sevilla
@@ -21,30 +22,38 @@
 #
 require File.join(File.dirname(__FILE__), %w[spec_helper])
 require File.join(File.dirname(__FILE__), %w[spec_common])
+require 'thread'
 
 Thread.abort_on_exception = true
 
 describe EMDRb, "Client" do
   it_should_behave_like "DRb basics"
 
-  before(:all) do
-    system(File.join(File.dirname(__FILE__), "drbserver.rb drb"))
+  before do
+    @pid = fork
+    if @pid.nil?
+      exec(File.join(File.dirname(__FILE__), "drbserver.rb drb"))
+    end
     DRb.start_service
     @obj = DRb::DRbObject.new(nil, "druby://localhost:12345")
   end
 
-  after(:all) do
-    pid = File.open(File.join(File.dirname(__FILE__), "drbserver.pid")) { |fp| fp.read.to_i }
-    Process.kill("SIGTERM", pid)
+  after do
+    DRb.stop_service
+    Process.kill("SIGTERM", @pid)
+    Process.waitpid(@pid)
   end
 
   it "should be able to perform asynchronous method calls" do
+    q = Queue.new
     EventMachine::next_tick do
       @obj.send_async(:identity, 1).callback do |data|
-        data[0].should be_true
-        data[1].should == 1
+        q << data
       end
     end
+    data = q.shift
+    data[0].should be_true
+    data[1].should == 1
   end
 
   it "should be able to perform asynchronous method calls with a passed block" do

@@ -57,14 +57,17 @@ describe EMDRb, "Client" do
   end
 
   it "should be able to perform asynchronous method calls with a passed block" do
+    q = Queue.new
+    val = 1
     EventMachine::next_tick do
-      val = 1
       df = @obj.send_async(:blockyield, 1,2,3,4,5,6,7) { |x| val *= x; val }
       df.callback do |data|
-        data[0].should be_true
-        val.should == 5040
+        q << data
       end
     end
+    data = q.shift
+    data[0].should be_true
+    val.should == 5040
   end
 
 end

@@ -41,7 +41,7 @@ describe EMDRb, "Client" do
   after do
     DRb.stop_service
     Process.kill("SIGTERM", @pid)
-    Process.waitpid(@pid)
+    Process.wait(@pid)
   end
 
   it "should be able to perform asynchronous method calls" do

@@ -64,19 +64,19 @@ if ARGV[0] == "emdrb"
     ##
     # Simple example of a deferrable method structured as a state
     # machine.
-    def block_df(args, block, state={:index => 0, :retval => 0 })
-      if state[:index] >= args.length
+    def block_df(data, state={:index => 0, :retval => 0 }, &block)
+      if state[:index] >= data.length
         self.set_deferred_status(:succeeded, state[:retval])
         return(self)
       end
 
-      df = block.send_async(:call, args[state[:index]])
+      df = block.send_async(:call, data[state[:index]])
       df.callback do |succ,result|
         if succ
           state[:retval] += result
           state[:index] += 1
           EventMachine::next_tick do
-            self.block_df(args, block, state)
+            self.block_df(data, state)
           end
         else
           self.set_deferred_status(:failed,  res)

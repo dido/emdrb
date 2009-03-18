@@ -70,19 +70,14 @@ if ARGV[0] == "emdrb"
         return(self)
       end
 
-      df = block.send_async(:call, data[state[:index]])
-      df.callback do |succ,result|
-        if succ
-          state[:retval] += result
-          state[:index] += 1
-          EventMachine::next_tick do
-            self.block_df(data, state)
-          end
-        else
-          self.set_deferred_status(:failed,  res)
-        end
+      df = yield data[state[:index]]
+      df.callback do |result|
+        state[:retval] += result
+        state[:index] += 1
+        self.block_df(data, state, &block)
       end
       df.errback do |res|
+        df.fail(res)
       end
       return(self)
     end

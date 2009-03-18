@@ -30,18 +30,12 @@ describe EMDRb, "Client" do
   it_should_behave_like "DRb basics"
 
   before do
-    @pid = fork
-    if @pid.nil?
-      exec(File.join(File.dirname(__FILE__), "drbserver.rb drb"))
-    end
     DRb.start_service
     @obj = DRb::DRbObject.new(nil, "druby://localhost:12345")
   end
 
   after do
     DRb.stop_service
-    Process.kill("SIGTERM", @pid)
-    Process.wait(@pid)
   end
 
   it "should be able to perform asynchronous method calls" do
@@ -52,8 +46,7 @@ describe EMDRb, "Client" do
       end
     end
     data = q.shift
-    data[0].should be_true
-    data[1].should == 1
+    data.should == 1
   end
 
   it "should be able to perform asynchronous method calls with a passed block" do

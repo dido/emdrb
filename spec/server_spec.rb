@@ -34,28 +34,21 @@ describe "EMDRb Server" do
   it_should_behave_like "DRb basics"
 
   before(:all) do
-    # but we start the *server* with EMDRb
-    @pid = fork
-    if @pid.nil?
-      exec(File.join(File.dirname(__FILE__), "drbserver.rb emdrb"))
-    end
     DRb.start_service
     @obj = DRbObject.new_with_uri("druby://localhost:12345")
   end
 
   after(:all) do
     DRb.stop_service
-    Process.kill("SIGTERM", @pid)
-    Process.waitpid(@pid)
   end
 
   it "should work with variadic methods" do
     @obj.sum(1,2,3,4,5).should == 15
   end
 
-#  it "should use deferrable methods correctly" do
-#    res = @obj.block_df(1,2,3,4,5) { |x| x }
-#    res.should == 15
-#  end
+  it "should use deferrable methods correctly" do
+    res = @obj.block_df([1,2,3,4,5]) { |x| x }
+    res.should == 15
+  end
 
 end

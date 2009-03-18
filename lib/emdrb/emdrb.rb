@@ -38,14 +38,27 @@ module DRb
   # most especially with respect to blocks.  This may also provide more
   # performance if one is using a method that itself makes use of
   # Deferrables to accomplish the job.
+  #
+  # There are certain rules that deferrable methods must obey:
+  #
+  # 1. They must always return a Deferrable to their caller.  This
+  #    Deferrable should succeed if the method returns a normal value,
+  #    passing its result as a parameter to any of its callbacks.
+  # 2. Exceptions must be caught and the Deferrable they return must
+  #    fail, with the exception object passed as a parameter to its
+  #    errbacks.
+  # 3. Blocks passed to the deferrable method will always return a
+  #    Deferrable, which again will succeed 
+  #  
   # 
   module DRbEMSafe
     module ClassMethods
       ##
       # Mark the method as a deferrable method.  Such a method must always
       # return an object which includes EventMachine::Deferrable.  A block
-      # passed to such a method is actually a DRbObject reference which
-      # should be invoked using DRbEMSafe#dyield below.
+      # passed to such a method returns a deferrable whenever it is invoked,
+      # by doing a direct call to the block or using yield, and the code
+      # for the deferrable method must take this into account.
       def deferrable_method(method_name)
         @deferrable_methods ||= {}
         @deferrable_methods[method_name] = true
@@ -55,23 +68,41 @@ module DRb
         return(@deferrable_methods.has_key?(method_name))
       end
 
-      ##
-      # Yield to a block in a deferrable method.  This invokes the block
-      # asynchronously, returning a Deferrable which should be used as
-      # one received from using DRbObject#send_async.  This should be
-      # the only mechanism used to invoke a block from within a deferrable
-      # method: using yield or block.call will probably produce unexpected
-      # results.
-      def dyield(block, x)
-        if x.size == 1 && x[0].class == Array
-          x[0] = DRbArray.new(x[0])
-        end
-        return(block.send_async(:call, *x))
-      end
     end
 
     def self.included(base)
       base.extend(ClassMethods)
+    end
+  end
+
+  ##
+  # Used to wrap Proc objects so that they can be safely called from
+  # deferrable methods.  This makes any invocation of the block an
+  # asynchronous call that returns a Deferrable rather than calling
+  # the block synchronously, which will result in a threading deadlock
+  # if this is performed in the main event loop.  This mechanism is
+  # used to provide facilities for deferrable methods which run within
+  # the master event loop.
+  class DRbProcWrapper
+    def initialize(block)
+      @block = block
+    end
+
+    ##
+    # Initiate an asynchronous call to the block this is wrapping around.
+    # Returns a deferrable.
+    def call(*args)
+      if args.size == 1 && args[0].class == Array
+        args[0] = DRbArray.new(args[0])
+      end
+      return(@block.send_async(:call, *args))
+    end
+
+    ##
+    # Return a Proc that will do an asynchronous call to the underlying
+    # object.
+    def to_proc
+      return(Proc.new { |args| self.call(args) })
     end
   end
 
@@ -312,7 +343,7 @@ module DRb
         begin
           return(@request[:ro].__send__(@request[:msg],
                                         *@request[:argv],
-                                        &@request[:block]))
+                                        &DRbProcWrapper.new(@request[:block])))
         rescue
           df = EventMachine::DefaultDeferrable.new
           df.fail($!)
@@ -760,8 +791,7 @@ module DRb
       else
         @result = obj
         @state = :succ
-        @df.set_deferred_status(:succeeded, [@succ, @result])
-        # close the connection after the call succeeds.
+        @succ ? @df.succeed(@result) : @df.fail(@result)
         close_connection
       end
     end
@@ -792,17 +822,21 @@ module DRb
 
     ##
     # Perform an asynchronous call to the remote object.  This can only
-    # be used from within the event loop.  It returns a deferrable to which
-    # callbacks can be attached.
+    # be used from within the event loop.  It returns a deferrable, which
+    # will succeed if the remote method called performs a normal return,
+    # and callbacks attached to the deferrable will receive this return
+    # value.  If the remote method raises an exception, it will fail the
+    # deferrable, and the exception object will be passed to the errbacks
+    # of the deferrable.
     def send_async(msg_id, *a, &b)
       df = EventMachine::DefaultDeferrable.new
       if DRb.here?(@uri)
 	obj = DRb.to_obj(@ref)
 	DRb.current_server.check_insecure_method(obj, msg_id)
         begin
-          df.succeed([true, obj.__send__(msg_id, *a, &b)])
+          df.succeed(obj.__send__(msg_id, *a, &b))
         rescue
-          df.succeed([false, $!])
+          df.fail($!)
         end
         return(df)
       end
@@ -830,7 +864,8 @@ module DRb
       q = Queue.new
       EventMachine::next_tick do
         df = self.send_async(msg_id, *a, &b)
-        df.callback { |data| q << data }
+        df.callback { |data| q << [true, data] }
+        df.errback { |exc| q << [false, exc] }
       end
       succ, result = q.shift
       if succ

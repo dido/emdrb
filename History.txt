@@ -1,3 +1,7 @@
+== 0.4.0 / 2009-03-18
+* Mechanism for deferrable methods using blocks cleaned up further
+* Asynchronous method call API cleaned up
+
 == 0.3.2 / 2009-03-16
 * Deferrable method mechanism cleaned up
 

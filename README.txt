@@ -97,11 +97,6 @@ Or it could be written to use of asynchronous calls:
 
 * Standard gem installation: 'sudo gem install' ought to do the trick.
 
-Note that you will need the daemons gem ('sudo gem install daemons')
-if you would like to run the rspec tests that are included with
-EMDRb.  Daemons is not required to use EMDRb otherwise, and as such it
-is not listed as a hard dependency in the gem install.
-
 If you want to install it manually, you can always download it at the
 EMDRb project page at:
 

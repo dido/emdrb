@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 #
 # Author:: Rafael R. Sevilla (mailto:dido@imperium.ph)
 # Copyright:: Copyright © 2008, 2009 Rafael R. Sevilla
@@ -29,6 +30,14 @@ describe "DRb basics", :shared => true do
     val = 1
     @obj.blockyield(1,2,3,4,5,6,7) { |x| val *= x }
     val.should == 5040
+  end
+
+  it "should propagate exceptions to the client" do
+    lambda do
+      @obj.raise_exception
+    end.should raise_error(RuntimeError) do |error|
+      error.message.should == "This error should be expected"
+    end
   end
 
 end

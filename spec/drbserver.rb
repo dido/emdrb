@@ -53,12 +53,6 @@ class TestServer
     end
   end
 
-  # This is a fake implementation of block_df to be used by the standard
-  # DRb so that the same tests will run against either.
-  def block_df(vals)
-    return(vals.inject(0) { |x,y| x + y })
-  end
-
   def raise_exception
     raise "This error should be expected"
   end
@@ -73,7 +67,10 @@ if ARGV[0] == "emdrb"
 
     ##
     # Simple example of a deferrable method structured as a state
-    # machine.
+    # machine.  This method sums values of the data array as they
+    # are returned by the caller.  The similarity of this function
+    # to a tail-recursive, continuation-passing style version of
+    # the same should be obvious...
     def block_df(data, state={:index => 0, :retval => 0 }, &block)
       if state[:index] >= data.length
         self.set_deferred_status(:succeeded, state[:retval])
@@ -91,6 +88,15 @@ if ARGV[0] == "emdrb"
       end
       return(self)
     end
+  end
+else
+  class TestServer
+    # This is a fake implementation of block_df to be used by the standard
+    # DRb so that the same tests will run against either.
+    def block_df(vals, &block)
+      return(vals.inject(0) { |x,y| x + block.call(y) })
+    end
+
   end
 end
 

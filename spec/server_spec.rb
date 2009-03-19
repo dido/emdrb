@@ -33,12 +33,12 @@ Thread.abort_on_exception = true
 describe "EMDRb Server" do
   it_should_behave_like "DRb basics"
 
-  before(:all) do
+  before do
     DRb.start_service
     @obj = DRbObject.new_with_uri("druby://localhost:12345")
   end
 
-  after(:all) do
+  after do
     DRb.stop_service
   end
 

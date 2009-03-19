@@ -48,10 +48,14 @@ PROJ.spec.opts << '--color'
 
 namespace :spec do
   task :run do
+    type = ENV["TYPE"]
+    unless type == "drb"
+      type = "emdrb"
+    end
     trap("SIGCHLD", "IGNORE")
     pid = fork
     if pid.nil?
-      exec("ruby -Ilib examples/drbserver.rb emdrb")
+      exec("ruby -Ilib examples/drbserver.rb #{type}")
     end
   end
 end

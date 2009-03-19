@@ -61,7 +61,6 @@ end
 if ARGV[0] == "emdrb"
   class TestServer
     include DRb::DRbEMSafe
-    include EventMachine::Deferrable
 
     deferrable_method :block_df
 
@@ -71,10 +70,11 @@ if ARGV[0] == "emdrb"
     # are returned by the caller.  The similarity of this function
     # to a tail-recursive, continuation-passing style version of
     # the same should be obvious...
-    def block_df(data, state={:index => 0, :retval => 0 }, &block)
+    def block_df(data, state={:index => 0, :retval => 0, :df => nil}, &block)
+      state[:df] ||= EventMachine::DefaultDeferrable.new
       if state[:index] >= data.length
-        self.set_deferred_status(:succeeded, state[:retval])
-        return(self)
+        state[:df].set_deferred_status(:succeeded, state[:retval])
+        return(state[:df])
       end
 
       df = yield data[state[:index]]
@@ -84,9 +84,9 @@ if ARGV[0] == "emdrb"
         self.block_df(data, state, &block)
       end
       df.errback do |res|
-        df.fail(res)
+        state[:df].fail(res)
       end
-      return(self)
+      return(state[:df])
     end
   end
 else

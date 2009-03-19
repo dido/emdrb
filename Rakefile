@@ -34,8 +34,6 @@ end
 ensure_in_path 'lib'
 require 'emdrb/version'
 
-task :default => 'spec:run'
-
 PROJ.name = 'emdrb'
 PROJ.authors = 'dido@imperium.ph'
 PROJ.email = 'dido@imperium.ph'
@@ -45,5 +43,24 @@ PROJ.version = EMDRb::VERSION
 depend_on "eventmachine"
 
 PROJ.spec.opts << '--color'
+
+namespace :spec do
+  task :run do
+    puts <<EOT
+To run the specs, please execute
+
+ruby -Ilib spec/drbserver.rb drb
+
+to run the sample basic DRb-based server, or
+
+ruby -Ilib spec/drbserver.rb emdrb
+
+to run the sample EMDRb based server before running these specs.
+
+Any suggestions on how to run the thing automatically are much
+appreciated.
+EOT
+  end
+end
 
 # EOF

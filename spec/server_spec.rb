@@ -51,4 +51,8 @@ describe "EMDRb Server" do
     res.should == 15
   end
 
+  it "should propagate exceptions raised by a block in a deferrable method" do
+    res = @obj.block_df([1,2,3,4,5]) { |x| raise "an error" }
+  end
+
 end

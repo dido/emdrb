@@ -33,8 +33,6 @@ It is, however, not yet a complete replacement for the standard DRb:
 * No SSL support.  To support this fully, EventMachine needs to have
   more comprehensive SSL/TLS support.
 * RSpec tests are very basic, and need a lot more comprehensive work.
-  They also don't work for some reason when run under Rake, but work
-  just fine when run manually.
 * Many standard configuration options for DRb still unsupported
 
 These and many other problems are scheduled to be addressed in the

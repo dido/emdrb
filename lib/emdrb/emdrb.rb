@@ -715,11 +715,13 @@ module DRb
 
   def start_evloop
     unless EventMachine::reactor_running?
+      q = Queue.new
       @eventloop = Thread.new do
         begin
           EventMachine::run do
             # Start an empty event loop.  The DRb server(s) will be started
             # by EM#next_tick calls.
+            q << 1
           end
         ensure
           # close all servers if the event loop ends for whatever reason
@@ -728,6 +730,7 @@ module DRb
           end
         end
       end
+      q.shift
     end
   end
   module_function :start_evloop

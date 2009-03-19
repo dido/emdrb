@@ -644,10 +644,10 @@ module DRb
   end
 
   ##
-  # Class representing a drb server instance.  This subclasses DRb::DRbServer
-  # for brevity.  DRbServer instances are normally created indirectly using
-  # either EMDRb.start service (which emulates DRb.start_service) or via
-  # EMDRb.start_drbserver (designed to be called from within an event loop).
+  # Class representing a drb server instance.  DRbServer instances are
+  # normally created indirectly using either DRb.start_service or
+  # EMDRb.start_drbserver (designed to be called from within an event
+  # loop).
   class DRbServer
     def initialize(uri=nil, front=nil, config_or_acl=nil)
       if Hash === config_or_acl
@@ -713,6 +713,14 @@ module DRb
   end
   module_function :start_drbserver
 
+  ##
+  # Stop all servers.
+  def stop_all_servers
+    @server.each do |uri,srv|
+      srv.stop_service
+    end
+  end
+
   def start_evloop
     unless EventMachine::reactor_running?
       q = Queue.new
@@ -720,14 +728,14 @@ module DRb
         begin
           EventMachine::run do
             # Start an empty event loop.  The DRb server(s) will be started
-            # by EM#next_tick calls.
+            # by EM#next_tick calls.  Just put a dummy value into the queue
+            # so that the calling thread will resume execution once this
+            # event thread actually starts the loop.
             q << 1
           end
         ensure
           # close all servers if the event loop ends for whatever reason
-          @server.each do |uri,srv|
-            srv.stop_service
-          end
+          self.stop_all_servers
         end
       end
       q.shift

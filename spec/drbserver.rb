@@ -52,6 +52,16 @@ class TestServer
       yield x
     end
   end
+
+  # This is a fake implementation of block_df to be used by the standard
+  # DRb so that the same tests will run against either.
+  def block_df(vals)
+    return(vals.inject(0) { |x,y| x + y })
+  end
+
+  def raise_exception
+    raise "This error should be expected"
+  end
 end
 
 if ARGV[0] == "emdrb"

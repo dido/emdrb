@@ -48,20 +48,11 @@ PROJ.spec.opts << '--color'
 
 namespace :spec do
   task :run do
-    puts <<EOT
-To run the specs, please execute
-
-ruby -Ilib examples/drbserver.rb drb
-
-to run the sample basic DRb-based server, or
-
-ruby -Ilib examples/drbserver.rb emdrb
-
-to run the sample EMDRb based server before running these specs.
-
-Any suggestions on how to run the thing automatically are much
-appreciated.
-EOT
+    trap("SIGCHLD", "IGNORE")
+    pid = fork
+    if pid.nil?
+      exec("ruby -Ilib examples/drbserver.rb emdrb")
+    end
   end
 end
 

@@ -51,11 +51,11 @@ namespace :spec do
     puts <<EOT
 To run the specs, please execute
 
-ruby -Ilib spec/drbserver.rb drb
+ruby -Ilib examples/drbserver.rb drb
 
 to run the sample basic DRb-based server, or
 
-ruby -Ilib spec/drbserver.rb emdrb
+ruby -Ilib examples/drbserver.rb emdrb
 
 to run the sample EMDRb based server before running these specs.
 

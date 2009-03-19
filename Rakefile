@@ -34,6 +34,8 @@ end
 ensure_in_path 'lib'
 require 'emdrb/version'
 
+task :default => 'spec:run'
+
 PROJ.name = 'emdrb'
 PROJ.authors = 'dido@imperium.ph'
 PROJ.email = 'dido@imperium.ph'

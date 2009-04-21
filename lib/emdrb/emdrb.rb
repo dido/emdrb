@@ -47,9 +47,9 @@ module DRb
   # 2. Exceptions must be caught and the Deferrable they return must
   #    fail, with the exception object passed as a parameter to its
   #    errbacks.
-  # 3. Blocks passed to the deferrable method will always return a
-  #    Deferrable, which again will succeed 
-  #  
+  # 3. Blocks passed to the deferrable method should always return a
+  #    Deferrable, which again should succeed when the value of the
+  #    block becomes available.
   # 
   module DRbEMSafe
     module ClassMethods
@@ -720,6 +720,7 @@ module DRb
       srv.stop_service
     end
   end
+  module_function :stop_all_servers
 
   def start_evloop
     unless EventMachine::reactor_running?
@@ -844,10 +845,17 @@ module DRb
       if DRb.here?(@uri)
 	obj = DRb.to_obj(@ref)
 	DRb.current_server.check_insecure_method(obj, msg_id)
-        begin
-          df.succeed(obj.__send__(msg_id, *a, &b))
-        rescue
-          df.fail($!)
+        if obj.kind_of?(DRbEMSafe) && obj.class.deferrable_method?(msg_id)
+          # If the method is a deferrable, calling the method will itself
+          # return a deferrable by definition, and we should be using this
+          # deferrable to determine whether the call succeeded or failed.
+          df = obj.__send__(msg_id, *a, &b)
+        else
+          begin
+            df.succeed(obj.__send__(msg_id, *a, &b))
+          rescue
+            df.fail($!)
+          end
         end
         return(df)
       end

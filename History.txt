@@ -1,3 +1,6 @@
+== 0.4.1 / 2009-04-21
+* Bug in calling deferrable methods from a local object now fixed
+
 == 0.4.0 / 2009-03-18
 * Mechanism for deferrable methods using blocks cleaned up further
 * Asynchronous method call API cleaned up

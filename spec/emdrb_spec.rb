@@ -24,10 +24,23 @@
 require File.join(File.dirname(__FILE__), %w[spec_helper])
 require 'thread'
 
+class LocalDeferrable
+  include DRb::DRbEMSafe
+
+  def df_tester(val)
+    df = EventMachine::DefaultDeferrable.new
+    df.succeed(val+1)
+    return(df)
+  end
+
+  deferrable_method :df_tester
+end
+
 describe EMDRb do
   before do
-    DRb.start_service
+    DRb.start_service("druby://localhost:56789", LocalDeferrable.new)
     @obj = DRbObject.new_with_uri("druby://localhost:12345")
+    @obj2 = DRbObject.new_with_uri("druby://localhost:56789")
   end
 
   after do
@@ -93,6 +106,10 @@ describe EMDRb do
     end.should raise_error(RuntimeError) do |error|
       error.message.should == "an error"
     end
+  end
+
+  it "should call local deferrables correctly" do
+    @obj2.df_tester(1).should == 2
   end
 end
 

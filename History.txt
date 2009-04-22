@@ -1,3 +1,6 @@
+== 0.4.2 / 2009-04-22
+* Fix exception propagation for local deferrable methods
+
 == 0.4.1 / 2009-04-21
 * Bug in calling deferrable methods from a local object now fixed
 

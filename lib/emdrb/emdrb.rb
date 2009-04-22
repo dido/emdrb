@@ -39,17 +39,25 @@ module DRb
   # performance if one is using a method that itself makes use of
   # Deferrables to accomplish the job.
   #
-  # There are certain rules that deferrable methods must obey:
+  # Deferrable methods operate under certain conditions:
   #
   # 1. They must always return a Deferrable to their caller.  This
   #    Deferrable should succeed if the method returns a normal value,
   #    passing its result as a parameter to any of its callbacks.
-  # 2. Exceptions must be caught and the Deferrable they return must
-  #    fail, with the exception object passed as a parameter to its
-  #    errbacks.
-  # 3. Blocks passed to the deferrable method should always return a
-  #    Deferrable, which again should succeed when the value of the
-  #    block becomes available.
+  # 2. A deferrable method may raise a normal exception in the course
+  #    of its execution.  The wrapper code will handle it.  However,
+  #    if a deferrable method wishes to raise an exception after it
+  #    has returned its deferrable to the EMDRb core, it may do so by
+  #    causing the deferrable to fail, giving the exception object as
+  #    its parameter.
+  # 3. A deferrable method is forbidden to make synchronous method
+  #    calls to other DRb objects.  All calls of this type must be
+  #    performed asynchronously.  Any attempt to make a synchronous
+  #    call will inevitably result in a threading deadlock.
+  # 4. All block calls such as yield or direct calls to the block
+  #    return a deferrable, as they wrap asynchronous calls to the
+  #    method in question.  This should be kept in mind whenever a
+  #    deferrable method executes a block.
   # 
   module DRbEMSafe
     module ClassMethods

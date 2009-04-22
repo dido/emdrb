@@ -843,19 +843,19 @@ module DRb
     def send_async(msg_id, *a, &b)
       df = EventMachine::DefaultDeferrable.new
       if DRb.here?(@uri)
-	obj = DRb.to_obj(@ref)
-	DRb.current_server.check_insecure_method(obj, msg_id)
-        if obj.kind_of?(DRbEMSafe) && obj.class.deferrable_method?(msg_id)
-          # If the method is a deferrable, calling the method will itself
-          # return a deferrable by definition, and we should be using this
-          # deferrable to determine whether the call succeeded or failed.
-          df = obj.__send__(msg_id, *a, &b)
-        else
-          begin
+        obj = DRb.to_obj(@ref)
+        DRb.current_server.check_insecure_method(obj, msg_id)
+        begin
+          if obj.kind_of?(DRbEMSafe) && obj.class.deferrable_method?(msg_id)
+            # If the method is a deferrable, calling the method will itself
+            # return a deferrable by definition, and we should be using this
+            # deferrable to determine whether the call succeeded or failed.
+            df = obj.__send__(msg_id, *a, &b)
+          else
             df.succeed(obj.__send__(msg_id, *a, &b))
-          rescue
-            df.fail($!)
           end
+        rescue
+          df.fail($!)
         end
         return(df)
       end

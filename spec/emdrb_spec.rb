@@ -33,6 +33,10 @@ class LocalDeferrable
     return(df)
   end
 
+  def df_tester_exception
+    raise "test exception"
+  end
+
   deferrable_method :df_tester
 end
 
@@ -110,6 +114,8 @@ describe EMDRb do
 
   it "should call local deferrables correctly" do
     @obj2.df_tester(1).should == 2
+    lambda { @obj2.df_tester_exception }.should raise_error(RuntimeError,
+                                                            "test exception")
   end
 end
 

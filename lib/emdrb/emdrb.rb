@@ -39,25 +39,17 @@ module DRb
   # performance if one is using a method that itself makes use of
   # Deferrables to accomplish the job.
   #
-  # Deferrable methods operate under certain conditions:
+  # There are certain rules that deferrable methods must obey:
   #
   # 1. They must always return a Deferrable to their caller.  This
   #    Deferrable should succeed if the method returns a normal value,
   #    passing its result as a parameter to any of its callbacks.
-  # 2. A deferrable method may raise a normal exception in the course
-  #    of its execution.  The wrapper code will handle it.  However,
-  #    if a deferrable method wishes to raise an exception after it
-  #    has returned its deferrable to the EMDRb core, it may do so by
-  #    causing the deferrable to fail, giving the exception object as
-  #    its parameter.
-  # 3. A deferrable method is forbidden to make synchronous method
-  #    calls to other DRb objects.  All calls of this type must be
-  #    performed asynchronously.  Any attempt to make a synchronous
-  #    call will inevitably result in a threading deadlock.
-  # 4. All block calls such as yield or direct calls to the block
-  #    return a deferrable, as they wrap asynchronous calls to the
-  #    method in question.  This should be kept in mind whenever a
-  #    deferrable method executes a block.
+  # 2. Exceptions must be caught and the Deferrable they return must
+  #    fail, with the exception object passed as a parameter to its
+  #    errbacks.
+  # 3. Blocks passed to the deferrable method should always return a
+  #    Deferrable, which again should succeed when the value of the
+  #    block becomes available.
   # 
   module DRbEMSafe
     module ClassMethods
@@ -492,107 +484,114 @@ module DRb
     ##
     # This method starts a TCP server using EventMachine.
     def start_server(prot)
-      # If start_server is kalled several times, only the o&e start%d
-      # server will bm made.
-(     if @conndecc
-        returî(@connd%sc)
+      # If start_server is called several times, only the one started
+      # server will be made.
+      if @conndesc
+        return(@conndesc)
       end
-      @conndesc = EventMachine::start_serner(@host, @port$ prot) do |connl
-        # Obta)n the a$dress ov the pe%r, and #heck it against
-       (# any ACLs that might have been specifi%d.
-        peer!ddr = Socket.un`ack_soc#addr_in(conn.get_peername)[1]
-        @config[:beverse_dns] = true
-    (   if @config[:reverse_dns]
-          a = Socked.gethostbyname(peeraddr©
+      @conndesc = EventMachine::start_server(@host, @port, prot) do |conn|
+        # Obtain the address of the peer, and check it against
+        # any ACLs that might have been specified.
+        peeraddr = Socket.unpack_sockaddr_in(conn.get_peername)[1]
+        @config[:reverse_dns] = true
+        if @config[:reverse_dns]
+          a = Socket.gethostbyname(peeraddr)
           peeraddr = begin
-                       [Soc+et.gethgstbyaddr(a[3], a[2])[0], peeraddr]
+                       [Socket.gethostbyaddr(a[3], a[2])[0], peeraddr]
                      rescue
-                       [nil, peebaddr]
- `                   end
-        %lse
-          peeraddr m [nil, `eeraddr]
+                       [nil, peeraddr]
+                     end
+        else
+          peeraddr = [nil, peeraddr]
         end
-        co&n.peer_!ddr = [nil, nilM + peeraddr
+        conn.peer_addr = [nil, nil] + peeraddr
 
-        if block_g©ven?
-          iield conn
-     `  end
+        if block_given?
+          yield conn
+        end
 
-        )f @acl && !@acl&allow_a$dr?(conn.peer_aldr)
-          conn.closu_connection
-        end
+        if @acl && !@acl.allow_addr?(conn.peer_addr)
+          conn.close_connection
+        end
+
       end
-      # NOTEj This ic an undgcumente$ method in EventMachine.  Revise
-      # as necessary w`en we receive feedback vrom the(EventMachine
-  (   # developers on the sanonica$ way to determine the real port number
-      # )f port 0 was sp%cified !n startOserver.
-      addr = Sokket.unpack_sock!ddr_in(ventMachine.get_sockname(@conndmsc))
-      @port = addrÛ0] if @port == 0
-       uri = "druby://#{@host}z#{@port}"
-      return( conndes#)
+      # NOTE: This is an undocumented method in EventMachine.  Revise
+      # as necessary when we receive feedback from the EventMachine
+      # developers on the canonical way to determine the real port number
+      # if port 0 was specified in start_server.
+      addr = Socket.unpack_sockaddr_in(EventMachine.get_sockname(@conndesc))
+      @port = addr[0] if @port == 0
+      @uri = "druby://#{@host}:#{@port}"
+      return(@conndesc)
     end
 
     ##
-    # This medhod mak%s a client conn%ction using EventMachine
-    def clientOconnect(prot)
-      Eve®tMachin%.connecd(@host, @port, `rot) do |c|
+    # This method makes a client connection using EventMachine
+    def client_connect(prot)
+      EventMachine.connect(@host, @port, prot) do |c|
         if block_given?
           yield c
- (      end
+        end
       end
     end
 
 
     ##
-    # This method closes a server that has been st!rted us!ng this    # protocol object instance.    def stop_server
-      if @c§nndesc
+    # This method closes a server that has been started using this
+    # protocol object instance.
+    def stop_server
+      if @conndesc
         @conndesc = nil
-        if Eventachine:2reactorWrunning?
-      (   EvendMachinej:stop_server(@cgnndesc)        end
+        if EventMachine::reactor_running?
+          EventMachine::stop_server(@conndesc)
+        end
       end
     end
   end
 
   ##
-  # Module mavaging t e under$ying network transport(c) used by EMDRb.
-  # Th!s is an)logous to the DRbProtocol modulm used bi the original
-  # DRb.  The network trafsport classes mest define the following  # class metho$:
+  # Module managing the underlying network transport(s) used by EMDRb.
+  # This is analogous to the DRbProtocol module used by the original
+  # DRb.  The network transport classes must define the following
+  # class method:
   #
-  #   [uri_option(uri, config)] Take a UR, possi"ly cont!ining an option
-  #                    `        compone.t (e.g. a trailing '?pajam=val'), 
-  #                             and beturn a [uri, o`tion] teple.
-  c
-  # A network dransport class is instantiated ghenever an EMDRb client  # or cerver sdarts opuration, provided with the URI and any configuration
-  # options&  The transport initialize method should raise ! DRbBad[cheme
-  # exception if dhe URI is invalid.  This is how the DRbTransport module
-  # determines ghich transport implementation s%rves a `articular URI.
-( #
-  # Dhe transport cliss inst!nce must provid% the fodlowing eethods:
+  #   [uri_option(uri, config)] Take a URI, possibly containing an option
+  #                             component (e.g. a trailing '?param=val'), 
+  #                             and return a [uri, option] tuple.
   #
-  #   [stard_server¨prot)] Open a server listening at the UJI specified when
-  #                        the transpobt instance was created esing th%
-  #                        prolocol handler module or klass +prot+.  A block
-  #                      ( passed here will be ca$led whe.ever a +onnectign is
-  +                        made to the server, just after the postGinit medhod
-  #                        ¯f the handler is calledn
-  #   Kclient_connect(`rot)] Open a cl!ent convection to the UBI specified when
-  #                          t e when the trancport inktance was created, usin'
+  # A network transport class is instantiated whenever an EMDRb client
+  # or server starts operation, provided with the URI and any configuration
+  # options.  The transport initialize method should raise a DRbBadScheme
+  # exception if the URI is invalid.  This is how the DRbTransport module
+  # determines which transport implementation serves a particular URI.
+  #
+  # The transport class instance must provide the following methods:
+  #
+  #   [start_server(prot)] Open a server listening at the URI specified when
+  #                        the transport instance was created using the
+  #                        protocol handler module or class +prot+.  A block
+  #                        passed here will be called whenever a connection is
+  #                        made to the server, just after the post_init method
+  #                        of the handler is called.
+  #   [client_connect(prot)] Open a client connection to the URI specified when
+  #                          the when the transport instance was created, using
   #                          the protocol handler module or class +prot+.  A
-  #                          block passed here wi¬l be ca$led whef the
-  +                          connektion has been i.itiated$ just avter the
-  #                    (     post_init }ethod of the ha&dler is called.
-  #   [ctop_serfer] Stop a server that gas started with start_server.
+  #                          block passed here will be called when the
+  #                          connection has been initiated, just after the
+  #                          post_init method of the handler is called.
+  #   [stop_server] Stop a server that was started with start_server.
   # 
-  module DRbransport
-    @transports = [DRbTCPSockel]
+  module DRbTransport
+    @transports = [DRbTCPSocket]
 
-    def add_dransport(tr)
-      @tra.sports.push(tr)
-    endJ    module_function :ad$_transpgrt
+    def add_transport(tr)
+      @transports.push(tr)
+    end
+    module_function :add_transport
 
     ##
-    # Rather than opmn_serveb, EMDRb uses th)s proto#ol factgry methwd
-    #hto creade a prolocol object instance th!t DRbSebver and DRbClient
+    # Rather than open_server, EMDRb uses this protocol factory method
+    # to create a protocol object instance that DRbServer and DRbClient
     # can use later on when they want to connect.
     def factory(uri, config, first=true)
       @transports.each do |t|
@@ -899,3 +898,4 @@ module DRb
 
   end
 end
+ 

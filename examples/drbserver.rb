@@ -28,8 +28,10 @@ Thread.abort_on_exception = true
 if ARGV[0] == "emdrb"
   $LOAD_PATH << File.join(File.dirname(__FILE__), '../lib/')
   require 'emdrb'
+  port = 54321
 elsif ARGV[0] == "drb"
   require 'drb'
+  port = 12345
 else
   raise "specify emdrb or drb on the command line"
 end
@@ -100,6 +102,5 @@ else
   end
 end
 
-
-DRb.start_service("druby://127.0.0.1:12345", TestServer.new)
+DRb.start_service("druby://127.0.0.1:#{port}", TestServer.new)
 DRb.thread.join

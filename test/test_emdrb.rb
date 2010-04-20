@@ -109,20 +109,49 @@ class TestEMDRb < Test::Unit::TestCase
     end
   end
 
-#  def test_async
-#    q = Queue.new
-#    EventMachine::next_tick do
-#      @@obj.send_async(:identity, 1).callback do |data|
-#        q << data
-#      end
-#    end
-#    data = q.shift
-#    assert_equal(1, data)
-#  end
+  def test_async
+    q = Queue.new
+    EventMachine::next_tick do
+      @@obj.send_async(:identity, 1).callback do |data|
+        q << data
+      end
+    end
+    data = q.shift
+    assert_equal(1, data)
+
+    q = Queue.new
+    EventMachine::next_tick do
+      @@obj2.send_async(:identity, 1).callback do |data|
+        q << data
+      end
+    end
+    data = q.shift
+    assert_equal(1, data)
+  end
 
   def test_variadic
     assert_equal(15, @@obj.sum(1,2,3,4,5))
     assert_equal(15, @@obj2.sum(1,2,3,4,5))
+  end
+
+  def test_deferrable
+    assert_equal(15, @@obj.block_df([1,2,3,4,5]) { |x| x })
+    assert_equal(15, @@obj2.block_df([1,2,3,4,5]) { |x| x })
+
+    assert_raises(RuntimeError) do
+      @@obj.block_df([1,2,3,4,5]) { |x| raise "an error" }
+    end
+
+    assert_raises(RuntimeError) do
+      @@obj2.block_df([1,2,3,4,5]) { |x| raise "an error" }
+    end
+  end
+
+  def test_local_df
+    assert_equal(2, @@obj3.df_tester(1))
+    assert_raises(RuntimeError) do
+      @@obj3.df_tester_exception
+    end
   end
 
 end

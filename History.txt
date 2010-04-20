@@ -1,3 +1,6 @@
+== 0.4.4 / 2010-04-20
+* Further work on testing emdrb for Ruby 1.9
+
 == 0.4.3 / 2010-02-01
 * Preliminary work to making emdrb ready for Ruby 1.9
 

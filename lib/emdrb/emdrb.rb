@@ -215,6 +215,10 @@ module DRb
     attr_accessor :peer_addr
 
     ##
+    # The URI for this connection
+    attr_accessor :uri
+
+    ##
     # The post initialization process sets up the default load
     # and argument length limits, the idconv object, the initial
     # state of the message packet state machine, clear the
@@ -300,7 +304,7 @@ module DRb
           $SAFE = @safe_level
         end
         begin
-          r = req[:ro].__send__(req[:msg], *req[:argv]) { |*x|
+          r = req[:ro].__send__(req[:msg], *req[:argv]) do |*x|
             jump_error = nil
             block_value = nil
             begin
@@ -317,7 +321,7 @@ module DRb
               end
             end
             block_value
-          }
+          end
           [true, r]
         rescue Exception => e
           [false, e]
@@ -673,13 +677,14 @@ module DRb
     def start_drb_server
       @thread = Thread.current
       @protocol.start_server(DRbServerProtocol) do |conn|
-        Thread.current['DRb'] = { 'client' => conn, 'server' => self }
         conn.front = @front
         conn.load_limit = @config[:load_limit]
         conn.argc_limit = @config[:argc_limit]
         conn.idconv = @config[:idconv]
         conn.server = self
         conn.safe_level = self.safe_level
+        conn.uri = @protocol.uri
+        Thread.current['DRb'] = { 'client' => conn, 'server' => self }
       end
       @uri = @protocol.uri
     end
@@ -767,6 +772,7 @@ module DRb
     attr_accessor :args
     attr_accessor :block
     attr_accessor :df
+    attr_accessor :uri
 
     def post_init
       @msgbuffer = ""
@@ -866,6 +872,7 @@ module DRb
         c.args = a
         c.block = b
         c.df = df
+        c.uri = @uri
       end
       return(df)
     end

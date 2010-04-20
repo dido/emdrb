@@ -22,42 +22,24 @@
 #
 begin
   require 'bones'
-  Bones.setup
+  require 'bones/plugins/test'
+  require 'bones/plugins/rubyforge'
 rescue LoadError
-  begin
-    load 'tasks/setup.rb'
-  rescue LoadError
-    raise RuntimeError, '### please install the "bones" gem ###'
-  end
+  abort '### Please install the "bones" gem ###'
 end
+
+task :default => 'test:run'
 
 ensure_in_path 'lib'
 require 'emdrb/version'
 
-task :default => 'spec:run'
-
-PROJ.name = 'emdrb'
-PROJ.authors = 'dido@imperium.ph'
-PROJ.email = 'dido@imperium.ph'
-PROJ.url = 'http://emdrb.rubyforge.org'
-PROJ.rubyforge.name = 'emdrb'
-PROJ.version = EMDRb::VERSION
-depend_on "eventmachine"
-
-PROJ.spec.opts << '--color'
-
-namespace :spec do
-  task :run do
-    type = ENV["TYPE"]
-    unless type == "drb"
-      type = "emdrb"
-    end
-    trap("SIGCHLD", "IGNORE")
-    pid = fork
-    if pid.nil?
-      exec("ruby -Ilib examples/drbserver.rb #{type}")
-    end
-  end
-end
+Bones {
+  name 'emdrb'
+  authors 'dido@imperium.ph'
+  email 'dido@imperium.ph'
+  url 'http://emdrb.rubyforge.org'
+  version EMDRb::VERSION
+  depend_on "eventmachine"
+}
 
 # EOF
